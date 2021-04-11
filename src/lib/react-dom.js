@@ -17,7 +17,13 @@ function createDOM(vdom) {
     return document.createTextNode(vdom)
   }
   const { type, props } = vdom
-  const dom = document.createElement(type)
+  let dom
+  // todo: 函数组件
+  if(typeof type === 'function') {
+    return dom = updateFunctionComponent(vdom)
+  } else { // todo: 原生标签
+    dom = document.createElement(type)
+  }
   updateProps(dom, props)
   props && reconcileChildren(props.children, dom)
   return dom
@@ -65,13 +71,23 @@ function reconcileChildren(children, parentDOM) {
   // todo: 子节点是对象，并且是数组，说明子节点有多个元素
   if(Array.isArray(children)) {
     for (let i = 0; i < children.length; i++) {
-      const element = children[i];
+      const element = children[i]
       render(element, parentDOM)
     }
     return
   }
   // todo: 其他
   parentDOM.textContent = (children && children.toString()) || ''
+}
+
+/**
+ * 函数组件转真实DOM
+ * @param {虚拟DOM} vdom 
+ */
+function updateFunctionComponent(vdom) {
+  const { type, props} = vdom
+  const renderVDom = type(props)
+  return createDOM(renderVDom)
 }
 
 const ReactDOM = {
