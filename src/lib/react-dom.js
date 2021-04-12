@@ -18,9 +18,10 @@ function createDOM(vdom) {
   }
   const { type, props } = vdom
   let dom
-  // todo: 函数组件
+  // todo: 函数/类组件
   if(typeof type === 'function') {
-    return dom = updateFunctionComponent(vdom)
+    console.log(type.prototype)
+    return (type.prototype.isReactComponent && updateClassComponent(vdom)) || updateFunctionComponent(vdom)
   } else { // todo: 原生标签
     dom = document.createElement(type)
   }
@@ -89,6 +90,18 @@ function updateFunctionComponent(vdom) {
   const renderVDom = type(props)
   return createDOM(renderVDom)
 }
+
+/**
+ * 类组件转真实DOM
+ * @param {虚拟DOM} vdom 
+ */
+ function updateClassComponent(vdom) {
+  const { type: ClassComponent, props} = vdom
+  const classInstance = new ClassComponent(props)
+  const renderVDom = classInstance.render(props)
+  return createDOM(renderVDom)
+}
+
 
 const ReactDOM = {
   render
