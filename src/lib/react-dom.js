@@ -1,3 +1,4 @@
+import { addEvent } from './event'
 /**
  * 把vdom转换成真实的DOM并且插入到parentDOM里面
  * @param {虚拟DOM，react元素，也就是一个JS对象} vdom 
@@ -20,7 +21,6 @@ function createDOM(vdom) {
   let dom
   // todo: 函数/类组件
   if(typeof type === 'function') {
-    console.log(type.prototype)
     return (type.prototype.isReactComponent && updateClassComponent(vdom)) || updateFunctionComponent(vdom)
   } else { // todo: 原生标签
     dom = document.createElement(type)
@@ -48,6 +48,9 @@ function updateProps(dom, props) {
             dom.style[attr] = style[attr]
           }
         }
+      } else if(key.startsWith('on')) {
+        // todo:处理事件属性
+        addEvent(dom, key.toLocaleLowerCase(), props[key])
       } else {
         dom[key] = props[key]
       }
