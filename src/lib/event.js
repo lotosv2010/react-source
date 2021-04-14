@@ -1,9 +1,11 @@
+import {updateQueue} from './component'
 // 合成事件对象
 let SyntheticBaseEvent = {}
 /**
  * 实现合成事件
  *  1.为了性能，快速回收 event 对象
  *  2.为了兼容性，屏蔽浏览器差异
+ *  3.为了实现批量更新
  * @param {原生事件} event 
  */
 function dispatchEvent(event) {
@@ -19,7 +21,11 @@ function dispatchEvent(event) {
       const e = event[key];
       SyntheticBaseEvent[key] = e
     }
+    // todo:进入批量更新模式
+    updateQueue.isBatchingUpdate = true
     listener.call(null, {...SyntheticBaseEvent})
+    // todo:退出批量更新模式，进入直接更新同步模式
+    updateQueue.isBatchingUpdate = false
     for (const key in SyntheticBaseEvent) {
       SyntheticBaseEvent[key] = null
     }
