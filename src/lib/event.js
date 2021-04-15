@@ -25,7 +25,8 @@ function dispatchEvent(event) {
     updateQueue.isBatchingUpdate = true
     listener.call(null, {...SyntheticBaseEvent})
     // todo:退出批量更新模式，进入直接更新同步模式
-    updateQueue.isBatchingUpdate = false
+    // updateQueue.isBatchingUpdate = false
+    updateQueue.batchUpdate() // 在事件执行后进行批量更新
     for (const key in SyntheticBaseEvent) {
       SyntheticBaseEvent[key] = null
     }

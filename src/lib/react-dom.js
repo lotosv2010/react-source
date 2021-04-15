@@ -13,7 +13,7 @@ function render(vdom, parentDOM) {
  * 把vdom转换成真实的DOM并且插入到页面中
  * @param {虚拟DOM} vdom 
  */
-function createDOM(vdom) {
+export function createDOM(vdom) {
   if(typeof vdom === 'string' || typeof vdom === 'number') {
     return document.createTextNode(vdom)
   }
@@ -102,7 +102,10 @@ function updateFunctionComponent(vdom) {
   const { type: ClassComponent, props} = vdom
   const classInstance = new ClassComponent(props)
   const renderVDom = classInstance.render(props)
-  return createDOM(renderVDom)
+  const dom = createDOM(renderVDom)
+  // 在类的实例上挂载一个属性DOM，指向此类实例对应的真实DOM
+  classInstance.dom = dom
+  return dom
 }
 
 
