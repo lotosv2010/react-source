@@ -17,13 +17,17 @@ export function createDOM(vdom) {
   if(typeof vdom === 'string' || typeof vdom === 'number') {
     return document.createTextNode(vdom)
   }
-  const { type, props } = vdom
+  console.log(vdom)
+  const { type, props, ref } = vdom
   let dom
   // todo: 函数/类组件
   if(typeof type === 'function') {
     return (type.prototype.isReactComponent && updateClassComponent(vdom)) || updateFunctionComponent(vdom)
   } else { // todo: 原生标签
     dom = document.createElement(type)
+  }
+  if(ref) {
+    ref.current = dom
   }
   updateProps(dom, props)
   props && reconcileChildren(props.children, dom)

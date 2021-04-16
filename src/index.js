@@ -4,46 +4,26 @@ import './index.css'
 import React from './lib/react'
 import ReactDOM from './lib/react-dom'
 class ClassComponent extends React.Component{
+  // todo: ref 引用的意思
+  // refs:提供了一种允许我们访问的DOM元素的方式
+  // ref:值是一个字符串，此方式已废弃
+  // ref:值是一个函数，此方式已废弃
+  // ref:值是一个对象，对象的current属性指向真实的DOM元素
   constructor(props) {
     super(props)
-    this.state = {number: 0}
+    this.a = React.createRef()
+    this.b = React.createRef()
+    this.result = React.createRef()
   }
-  handleClick = (e) => {
-    debugger
-    // 在React事件和生命周期函数中更新是批量的或者是异步的
-    // 在setTimeout原生事件是同步的
-    this.setState(prevState => ({number: prevState.number + 1}))
-    console.log(this.state.number) // 0
-    this.setState(prevState => ({number: prevState.number + 1}))
-    console.log(this.state.number) // 0
-    this.setState({number: this.state.number + 1})
-    console.log(this.state.number) // 0
-    this.setState({number: this.state.number + 1})
-    console.log(this.state.number) // 0
-    setTimeout(() => {
-      this.setState({number: this.state.number + 1})
-      console.log(this.state.number)// 2
-    }, 1000);
-
-    // this.setState({number: this.state.number + 1})
-    // console.log(this.state.number) // 0
-    // this.setState({number: this.state.number + 1})
-    // console.log(this.state.number) // 0
-    // this.setState(prevState => ({number: prevState.number + 1}))
-    // console.log(this.state.number) // 0
-    // this.setState(prevState => ({number: prevState.number + 1}))
-    // console.log(this.state.number) // 0
-    // setTimeout(() => {
-    //   this.setState({number: this.state.number + 1})
-    //   console.log(this.state.number)// 4
-    // }, 1000);
+  add = () => {
+    const a = this.a.current.value
+    const b = this.b.current.value
+    this.result.current.value = a + b
   }
   render() {
     return (
-      <div className='app' style={{color: 'red'}} onClick={this.handleClick}>
-        <span>{this.props.name}</span>
-        {this.props.children}
-        {this.state.number}
+      <div>
+        <input ref={this.a}/> + <input ref={this.b}/><span onClick={this.add}>=</span><input disabled ref={this.result}/>
       </div>
     )
   }
