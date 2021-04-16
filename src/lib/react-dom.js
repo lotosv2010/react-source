@@ -103,8 +103,12 @@ function updateFunctionComponent(vdom) {
  * @param {虚拟DOM} vdom 
  */
  function updateClassComponent(vdom) {
-  const { type: ClassComponent, props} = vdom
+  let { type: ClassComponent, props, ref} = vdom
   const classInstance = new ClassComponent(props)
+  // todo: 类组件ref
+  if(ref) {
+    ref.current = classInstance
+  }
   const renderVDom = classInstance.render(props)
   const dom = createDOM(renderVDom)
   // 在类的实例上挂载一个属性DOM，指向此类实例对应的真实DOM

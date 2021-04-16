@@ -3,33 +3,42 @@
 import './index.css'
 import React from './lib/react'
 import ReactDOM from './lib/react-dom'
-class ClassComponent extends React.Component{
-  // todo: ref 引用的意思
-  // refs:提供了一种允许我们访问的DOM元素的方式
-  // ref:值是一个字符串，此方式已废弃
-  // ref:值是一个函数，此方式已废弃
-  // ref:值是一个对象，对象的current属性指向真实的DOM元素
-  constructor(props) {
-    super(props)
-    this.a = React.createRef()
-    this.b = React.createRef()
-    this.result = React.createRef()
+
+class Form extends React.Component{
+  constructor() {
+    super()
+    this.formInput = React.createRef()
   }
-  add = () => {
-    const a = this.a.current.value
-    const b = this.b.current.value
-    this.result.current.value = a + b
+  getFocus = () => {
+    //  todo:this.formInput.current 是 TextInput 组件实例
+    this.formInput.current.getFocus()
   }
   render() {
     return (
       <div>
-        <input ref={this.a}/> + <input ref={this.b}/><span onClick={this.add}>=</span><input disabled ref={this.result}/>
+        <TextInput ref={this.formInput}/>
+        <button onClick={this.getFocus}>获取焦点</button>
       </div>
     )
   }
 }
 
-const element = <ClassComponent name='hello'> world</ClassComponent>
+class TextInput extends React.Component {
+  constructor() {
+    super()
+    this.input = React.createRef()
+  }
+  getFocus = () => {
+    this.input.current.focus()
+  }
+  render() {
+    return (
+      <input ref={this.input} />
+    )
+  }
+}
+
+const element = <Form name='hello'> world</Form>
 
 // console.log(JSON.stringify(element, null, 2))
 
