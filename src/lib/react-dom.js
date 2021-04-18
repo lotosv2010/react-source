@@ -17,9 +17,10 @@ export function createDOM(vdom) {
   if(typeof vdom === 'string' || typeof vdom === 'number') {
     return document.createTextNode(vdom)
   }
-  console.log(vdom)
+  // console.log(vdom)
   const { type, props, ref } = vdom
   let dom
+  console.log(ref, vdom)
   // todo: 函数/类组件
   if(typeof type === 'function') {
     return (type.prototype.isReactComponent && updateClassComponent(vdom)) || updateFunctionComponent(vdom)
@@ -104,7 +105,7 @@ function updateFunctionComponent(vdom) {
  */
  function updateClassComponent(vdom) {
   let { type: ClassComponent, props, ref} = vdom
-  const classInstance = new ClassComponent(props)
+  const classInstance = new ClassComponent({...props, ref})
   // todo: 类组件ref
   if(ref) {
     ref.current = classInstance

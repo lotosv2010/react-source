@@ -5,8 +5,7 @@ import Component from './component'
  * @param {配置对象} config 
  * @param {子节点，无子节点时为 undefined ，一个子节点时为独生子，多个子节点时为第一个子节点 } children 
  */
-function createElement(type,config, children) {
-  console.log(config)
+export function createElement(type,config, children) {
   let ref
   if(config) {
     Reflect.deleteProperty(config, '__source')
@@ -14,7 +13,7 @@ function createElement(type,config, children) {
     // todo:ref
     if(config.ref) {
       ref = config.ref
-      config.ref = {}
+      // config.ref = {}
     }
   }
   const props = {...config}
@@ -34,9 +33,18 @@ function createRef() {
     current: null
   }
 }
+// todo:forwardRef函数组件ref实现
+function forwardRef(FunctionComponent) {
+  return class extends Component {
+    render() {
+      return FunctionComponent(this.props, this.props.ref)
+    }
+  }
+}
 const React = {
   createElement,
   Component,
-  createRef
+  createRef,
+  forwardRef
 }
 export default React

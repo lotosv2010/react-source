@@ -4,6 +4,10 @@ import './index.css'
 import React from './lib/react'
 import ReactDOM from './lib/react-dom'
 
+const TextInput = React.forwardRef((props, ref) => {
+  return <input ref={ref}/>
+})
+
 class Form extends React.Component{
   constructor() {
     super()
@@ -11,7 +15,7 @@ class Form extends React.Component{
   }
   getFocus = () => {
     //  todo:this.formInput.current 是 TextInput 组件实例
-    this.formInput.current.getFocus()
+    this.formInput.current.focus()
   }
   render() {
     return (
@@ -23,27 +27,11 @@ class Form extends React.Component{
   }
 }
 
-class TextInput extends React.Component {
-  constructor() {
-    super()
-    this.input = React.createRef()
-  }
-  getFocus = () => {
-    this.input.current.focus()
-  }
-  render() {
-    return (
-      <input ref={this.input} />
-    )
-  }
-}
-
-const element = <Form name='hello'> world</Form>
-
+// const element = <Form />
 // console.log(JSON.stringify(element, null, 2))
 
 ReactDOM.render(
-  element,
+  <Form />,
   document.getElementById('root')
 )
 
