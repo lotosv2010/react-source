@@ -4,24 +4,57 @@ import './index.css'
 import React from './lib/react'
 import ReactDOM from './lib/react-dom'
 
-const TextInput = React.forwardRef((props, ref) => {
-  return <input ref={ref}/>
-})
-
-class Form extends React.Component{
-  constructor() {
-    super()
-    this.formInput = React.createRef()
+class LifecycleDemo extends React.Component {
+  // todo:initialization
+  static defaultProps = { // 初始化默认属性对象
+    name: 'lifecycle'
   }
-  getFocus = () => {
-    //  todo:this.formInput.current 是 TextInput 组件实例
-    this.formInput.current.focus()
+  constructor(props) {
+    super(props)
+    this.state = {number: 0}
+    console.log(`1.LifecycleDemo-constructor`)
+  }
+  
+  // todo:mounting
+  componentWillMount() {
+    console.log(`2.LifecycleDemo-componentWillMount`)
+  }
+  componentDidMount() {
+    console.log(`4.LifecycleDemo-componentDidMount`)
+  }
+
+  // todo:updation
+  componentWillReceiveProps() {
+    console.log(`5.LifecycleDemo-componentWillReceiveProps`)
+  }
+  shouldComponentUpdate(nextProps,nextState) {
+    console.log(`6.LifecycleDemo-shouldComponentUpdate`)
+    return nextState.number % 2 === 0
+  }
+  componentWillUpdate() {
+    console.log(`7.LifecycleDemo-componentWillUpdate`)
+  }
+  componentDidUpdate() {
+    console.log(`8.LifecycleDemo-componentDidUpdate`)
+  }
+
+  // todo:unmounting
+  componentWillUnmount() {
+    console.log(`9.LifecycleDemo-componentWillUnmount`)
+  }
+
+
+  // todo:render
+  handleClick = (event) => {
+    this.setState({number: this.state.number + 1})
   }
   render() {
+    console.log(`3.LifecycleDemo-render`)
     return (
       <div>
-        <TextInput ref={this.formInput}/>
-        <button onClick={this.getFocus}>获取焦点</button>
+        <h1>{this.props.name}</h1>
+        <p>{this.state.number}</p>
+        <button onClick={this.handleClick}>add</button>
       </div>
     )
   }
@@ -31,7 +64,7 @@ class Form extends React.Component{
 // console.log(JSON.stringify(element, null, 2))
 
 ReactDOM.render(
-  <Form />,
+  <LifecycleDemo />,
   document.getElementById('root')
 )
 

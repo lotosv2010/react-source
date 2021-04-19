@@ -20,7 +20,7 @@ export function createDOM(vdom) {
   // console.log(vdom)
   const { type, props, ref } = vdom
   let dom
-  console.log(ref, vdom)
+  // console.log(ref, vdom)
   // todo: 函数/类组件
   if(typeof type === 'function') {
     return (type.prototype.isReactComponent && updateClassComponent(vdom)) || updateFunctionComponent(vdom)
@@ -106,6 +106,10 @@ function updateFunctionComponent(vdom) {
  function updateClassComponent(vdom) {
   let { type: ClassComponent, props, ref} = vdom
   const classInstance = new ClassComponent({...props, ref})
+  // todo:componentWillMount,挂载前
+  if(classInstance.componentWillMount) {
+    classInstance.componentWillMount()
+  }
   // todo: 类组件ref
   if(ref) {
     ref.current = classInstance
@@ -114,6 +118,10 @@ function updateFunctionComponent(vdom) {
   const dom = createDOM(renderVDom)
   // 在类的实例上挂载一个属性DOM，指向此类实例对应的真实DOM
   classInstance.dom = dom
+  // todo:componentDidMount,挂载后
+  if(classInstance.componentDidMount) {
+    classInstance.componentDidMount()
+  }
   return dom
 }
 
