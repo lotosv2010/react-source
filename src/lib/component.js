@@ -107,13 +107,21 @@ class Component {
       this.componentWillUpdate()
     }
     const newVdom = this.render()
+    // todo:getDerivedStateFromProps
+    if(newVdom.type.getDerivedStateFromProps) {
+      const newState = newVdom.type.getDerivedStateFromProps(this.props, this.state)
+      if(newState) {
+        this.state = {...this.setState, ...newState}
+      }
+    }
+    const extraArgs = this.getSnapshotBeforeUpdate && this.getSnapshotBeforeUpdate()
     const newDOM = createDOM(newVdom)
     const oldDOM = this.dom
     oldDOM.parentNode.replaceChild(newDOM, oldDOM)
     this.dom = newDOM
     // todo:componentDidUpdate
     if(this.componentDidUpdate) {
-      this.componentDidUpdate()
+      this.componentDidUpdate(this.props, this.state, extraArgs)
     }
   }
 }

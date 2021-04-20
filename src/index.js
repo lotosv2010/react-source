@@ -4,105 +4,66 @@ import './index.css'
 import React from './lib/react'
 import ReactDOM from './lib/react-dom'
 
-class LifecycleDemo extends React.Component {
-  // todo:initialization
-  static defaultProps = { // 初始化默认属性对象
-    name: 'lifecycle'
-  }
+class ScrollList extends React.Component {
   constructor(props) {
     super(props)
-    this.state = {number: 0}
-    console.log(`1.LifecycleDemo-constructor`)
+    this.wrapper = React.createRef()
+    this.state = {message: []}
+    console.log('1.constructor')
   }
-  
   // todo:mounting
-  componentWillMount() {
-    console.log(`2.LifecycleDemo-componentWillMount`)
+  // todo:根据新的属性对象得到新的状态对象，它是一个静态方法
+  static getDerivedStateFromProps(nextProps, nextState) {
+    console.log('2.getDerivedStateFromProps', nextProps, nextState)
+    return {...nextState, name: `lifecycle-${nextState.message.length}`}
   }
   componentDidMount() {
-    console.log(`4.LifecycleDemo-componentDidMount`)
+    this.timer = setInterval(() => {
+      this.setState({
+        message: [`${this.state.message.length}`, ...this.state.message]
+      })
+    }, 1000);
   }
 
   // todo:updation
-  componentWillReceiveProps() {
-    console.log(`5.LifecycleDemo-componentWillReceiveProps`)
+  shouldComponentUpdate() {
+    console.log(`3.shouldComponentUpdate`)
+    return true
   }
-  shouldComponentUpdate(nextProps,nextState) {
-    console.log(`6.LifecycleDemo-shouldComponentUpdate`)
-    return nextState.number % 2 === 0
+  getSnapshotBeforeUpdate() {
+    console.log(`5.getSnapshotBeforeUpdate`)
+    return {
+      prevScrollTop: this.wrapper.current.scrollTop, // 老的向上卷去的高度
+      prevScrollHeight: this.wrapper.current.scrollHeight // 老的内容的高度
+    }
   }
-  componentWillUpdate() {
-    console.log(`7.LifecycleDemo-componentWillUpdate`)
-  }
-  componentDidUpdate() {
-    console.log(`8.LifecycleDemo-componentDidUpdate`)
+  componentDidUpdate(prevProps, prevState, {prevScrollTop, prevScrollHeight}) {
+    console.log(`6.componentDidUpdate`)
+    const wrapper = this.wrapper.current
+    console.log(prevScrollTop, prevScrollHeight)
+    wrapper.scrollTop = prevScrollTop + (wrapper.scrollHeight - prevScrollHeight)
   }
 
   // todo:unmounting
   componentWillUnmount() {
-    console.log(`9.LifecycleDemo-componentWillUnmount`)
-  }
-
-
-  // todo:render
-  handleClick = (event) => {
-    this.setState({number: this.state.number + 1})
+    console.log(`7.componentWillUnmount`)
+    clearInterval(this.timer)
   }
   render() {
-    console.log(`3.LifecycleDemo-render`)
+    console.log(`4.render`)
+    const styleObj = {
+      height: '100px',
+      width: '200px',
+      border: '1px solid red',
+      overflow: 'auto'
+    }
     return (
-      <div>
-        <h1>{this.props.name}</h1>
-        <p>{this.state.number}</p>
-        <button onClick={this.handleClick}>add</button>
-        {this.state.number > 3 ? '':<LifecycleDemoChild count={this.state.number}/>}
-      </div>
-    )
-  }
-}
-
-class LifecycleDemoChild extends React.Component {
-  // todo:initialization
-  constructor(props) {
-    super(props)
-    console.log(`1.LifecycleDemoChild-constructor`)
-  }
-  
-  // todo:mounting
-  componentWillMount() {
-    console.log(`2.LifecycleDemoChild-componentWillMount`)
-  }
-  componentDidMount() {
-    console.log(`4.LifecycleDemoChild-componentDidMount`)
-  }
-
-  // todo:updation
-  componentWillReceiveProps() {
-    console.log(`5.LifecycleDemoChild-componentWillReceiveProps`)
-  }
-  shouldComponentUpdate(nextProps,nextState) {
-    console.log(`6.LifecycleDemoChild-shouldComponentUpdate`)
-    return nextProps.count % 3 === 0
-  }
-  componentWillUpdate() {
-    console.log(`7.LifecycleDemoChild-componentWillUpdate`)
-  }
-  componentDidUpdate() {
-    console.log(`8.LifecycleDemoChild-componentDidUpdate`)
-  }
-
-  // todo:unmounting
-  componentWillUnmount() {
-    console.log(`9.LifecycleDemoChild-componentWillUnmount`)
-  }
-
-
-  // todo:render
-  render() {
-    console.log(`3.LifecycleDemoChild-render`)
-    return (
-      <div>
-        <p>{this.props.count}</p>
+      <div style={styleObj} ref={this.wrapper}>
+        {
+          this.state.message.map((msg, index) => {
+            return <p key={index}><span>{msg}</span></p>
+          })
+        }
       </div>
     )
   }
@@ -112,7 +73,7 @@ class LifecycleDemoChild extends React.Component {
 // console.log(JSON.stringify(element, null, 2))
 
 ReactDOM.render(
-  <LifecycleDemo />,
+  <ScrollList />,
   document.getElementById('root')
 )
 
