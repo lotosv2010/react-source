@@ -55,6 +55,54 @@ class LifecycleDemo extends React.Component {
         <h1>{this.props.name}</h1>
         <p>{this.state.number}</p>
         <button onClick={this.handleClick}>add</button>
+        {this.state.number > 3 ? '':<LifecycleDemoChild count={this.state.number}/>}
+      </div>
+    )
+  }
+}
+
+class LifecycleDemoChild extends React.Component {
+  // todo:initialization
+  constructor(props) {
+    super(props)
+    console.log(`1.LifecycleDemoChild-constructor`)
+  }
+  
+  // todo:mounting
+  componentWillMount() {
+    console.log(`2.LifecycleDemoChild-componentWillMount`)
+  }
+  componentDidMount() {
+    console.log(`4.LifecycleDemoChild-componentDidMount`)
+  }
+
+  // todo:updation
+  componentWillReceiveProps() {
+    console.log(`5.LifecycleDemoChild-componentWillReceiveProps`)
+  }
+  shouldComponentUpdate(nextProps,nextState) {
+    console.log(`6.LifecycleDemoChild-shouldComponentUpdate`)
+    return nextProps.count % 3 === 0
+  }
+  componentWillUpdate() {
+    console.log(`7.LifecycleDemoChild-componentWillUpdate`)
+  }
+  componentDidUpdate() {
+    console.log(`8.LifecycleDemoChild-componentDidUpdate`)
+  }
+
+  // todo:unmounting
+  componentWillUnmount() {
+    console.log(`9.LifecycleDemoChild-componentWillUnmount`)
+  }
+
+
+  // todo:render
+  render() {
+    console.log(`3.LifecycleDemoChild-render`)
+    return (
+      <div>
+        <p>{this.props.count}</p>
       </div>
     )
   }

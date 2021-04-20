@@ -27,16 +27,34 @@ class Updater {
     this.pendingStates.push(partialState)
     // 判断当前是否处于批量更新模式(异步)，如果是的话则先添加更新队列里去等待更新
     // 否则说明处于非批量更新模式(同步)，直接更新组件
-    updateQueue.isBatchingUpdate ? updateQueue.add(this) : this.updateComponent()
+    // updateQueue.isBatchingUpdate ? updateQueue.add(this) : this.updateComponent()
+    this.emitUpdate()
+  }
+  emitUpdate(nextProps) {
+    this.nextProps = nextProps
+    // todo:componentWillReceiveProps
+    if(this.classInstance.componentWillReceiveProps) {
+      this.classInstance.componentWillReceiveProps(nextProps)
+    }
+    // 如果有新的属性或当前不是批量更新模式
+    if(this.nextProps || !updateQueue.isBatchingUpdate) {
+      this.updateComponent()
+    } else {
+      updateQueue.add(this)
+    }
   }
   updateComponent() {
     // updater里的类组件实例和数组中的状态
-    const { pendingStates, classInstance } = this
-    if(pendingStates.length > 0) {
+    const { pendingStates, classInstance, nextProps } = this
+    // 如果属性变化了或者状态变化了
+    if(nextProps || pendingStates.length > 0) {
       // 从pendingStates中得到新的状态
-      classInstance.state = this.getState()
+      // classInstance.state = this.getState()
       // 然后重新渲染，进行更新
-      classInstance.forceUpdate()
+      // classInstance.forceUpdate()
+
+      // 1.获取新的状态
+      shouldUpdate(classInstance, nextProps, this.getState())
     }
   }
   getState() {
@@ -56,6 +74,20 @@ class Updater {
     }
   }
 }
+
+function shouldUpdate(classInstance, nextProps, nextState) {
+  // todo:shouldComponentUpdate
+  // 更新属性
+  classInstance.props = nextProps || classInstance.props
+  classInstance.state = nextState || classInstance.state
+  const shouldComponentUpdate = classInstance.shouldComponentUpdate
+  // 如果有shouldComponentUpdate方法并且返回值是false
+  if(shouldComponentUpdate && !shouldComponentUpdate(nextProps, nextState)) {
+    return
+  }
+  // 如果没有shouldComponentUpdate方法或者返回值是true,则更新
+  classInstance.forceUpdate()
+}
 class Component {
   constructor(props) {
     this.props = props;
@@ -70,11 +102,19 @@ class Component {
   // 然后用新的真实DOM替换老的真实DOM就可以实现更新了
   // todo:此处需要做diff算法
   forceUpdate() {
+    // todo:componentWillUpdate
+    if(this.componentWillUpdate) {
+      this.componentWillUpdate()
+    }
     const newVdom = this.render()
     const newDOM = createDOM(newVdom)
     const oldDOM = this.dom
     oldDOM.parentNode.replaceChild(newDOM, oldDOM)
     this.dom = newDOM
+    // todo:componentDidUpdate
+    if(this.componentDidUpdate) {
+      this.componentDidUpdate()
+    }
   }
 }
 Component.prototype.isReactComponent = {}
