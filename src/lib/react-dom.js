@@ -115,6 +115,8 @@ function updateFunctionComponent(vdom) {
     ref.current = classInstance
   }
   const renderVDom = classInstance.render(props)
+  // 把此虚拟DOM赋值给classInstance.oldVDom
+  classInstance.oldVDom = renderVDom
   const dom = createDOM(renderVDom)
   // 在类的实例上挂载一个属性DOM，指向此类实例对应的真实DOM
   classInstance.dom = dom
@@ -125,6 +127,18 @@ function updateFunctionComponent(vdom) {
   return dom
 }
 
+export function compare(oldVdom, newVdom) {
+  // 如果类型一样，要进行深度比较
+  if(oldVdom.type === newVdom.type) {
+    // 可以复用老DOM，不需要创建DOM了
+    // 1.用新的属性对象更新老的DOM属性
+    // 2.深度比较子元素，进行一一对比
+  } else {
+    const dom = createDOM(newVdom)
+    return dom
+  }
+  
+}
 
 const ReactDOM = {
   render

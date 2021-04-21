@@ -1,5 +1,5 @@
 import { isFunction } from './utils'
-import { createDOM } from './react-dom'
+import { createDOM, compare } from './react-dom'
 // 定义并导出一个变量
 export const updateQueue = {
   updaters: [], // 更新器的数组，默认是一个空数组
@@ -88,6 +88,7 @@ function shouldUpdate(classInstance, nextProps, nextState) {
   // 如果没有shouldComponentUpdate方法或者返回值是true,则更新
   classInstance.forceUpdate()
 }
+
 class Component {
   constructor(props) {
     this.props = props;
@@ -100,13 +101,16 @@ class Component {
   }
   // 让这个组件的状态改变后，重新render，得到新的虚拟DOM，然后从新的虚拟DOM得到真实的DOM
   // 然后用新的真实DOM替换老的真实DOM就可以实现更新了
-  // todo:此处需要做diff算法
   forceUpdate() {
     // todo:componentWillUpdate
     if(this.componentWillUpdate) {
       this.componentWillUpdate()
     }
+    // 获取老的虚拟DOM
+    const oldVdom = this.oldVDom
+    // 获取新的虚拟DOM
     const newVdom = this.render()
+
     // todo:getDerivedStateFromProps
     if(newVdom.type.getDerivedStateFromProps) {
       const newState = newVdom.type.getDerivedStateFromProps(this.props, this.state)
@@ -118,6 +122,10 @@ class Component {
     const newDOM = createDOM(newVdom)
     const oldDOM = this.dom
     oldDOM.parentNode.replaceChild(newDOM, oldDOM)
+
+    // todo:此处需要做diff算法
+    // 比较的时候还会比较元素本身和它的子元素
+    // const newDOM = compare(oldVdom, newVdom)
     this.dom = newDOM
     // todo:componentDidUpdate
     if(this.componentDidUpdate) {
