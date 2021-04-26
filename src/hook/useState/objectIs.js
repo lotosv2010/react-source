@@ -1,9 +1,6 @@
-// import React, { useState } from 'react'
 import React from 'react'
 import ReactDOM from 'react-dom'
 import './index.css'
-// import React from './lib/react'
-// import ReactDOM from './lib/react-dom'
 
 let lastState
 
@@ -46,8 +43,6 @@ function Counter(props) {
     </div>
   )
 }
-// const element = <Form />
-// console.log(JSON.stringify(element, null, 2))
 
 function render() {
   ReactDOM.render(

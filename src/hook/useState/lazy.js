@@ -1,9 +1,6 @@
-// import React, { useState } from 'react'
 import React from 'react'
 import ReactDOM from 'react-dom'
 import './index.css'
-// import React from './lib/react'
-// import ReactDOM from './lib/react-dom'
 
 let lastState
 
@@ -12,12 +9,6 @@ function useState(initialState) {
   function setState(newState) {
     if(typeof newState === 'function') {
       lastState = newState(lastState)
-    } else if (typeof newState === 'object'){
-      if(Object.is(lastState, newState)) {
-        return
-      } else {
-        lastState = newState
-      }
     } else {
       lastState = newState
     }
@@ -46,9 +37,6 @@ function Counter(props) {
     </div>
   )
 }
-// const element = <Form />
-// console.log(JSON.stringify(element, null, 2))
-
 function render() {
   ReactDOM.render(
     <Counter />,
