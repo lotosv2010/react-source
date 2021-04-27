@@ -9,16 +9,11 @@ function useState(initialState) {
   function setState(newState) {
     if(typeof newState === 'function') {
       lastState = newState(lastState)
-    } else if (typeof newState === 'object'){
-      if(Object.is(lastState, newState)) {
-        return
-      } else {
-        lastState = newState
-      }
-    } else {
+    } 
+    if(!Object.is(lastState, newState)) {
       lastState = newState
+      render()
     }
-    render()
   }
   return [state, setState]
 }
