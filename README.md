@@ -107,3 +107,9 @@ const element = React.createElement('h1',
 ## 九、实现新版生命周期
 
 ## 十、useState
+
+## 十一、useCallback
+
+## 十二、useMemo
+
+## 十三、memo
