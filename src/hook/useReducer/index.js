@@ -1,9 +1,6 @@
 import React from 'react';
-// import React from 'react'
 import ReactDOM from 'react-dom'
 import './index.css'
-// import React from './lib/react'
-// import ReactDOM from './lib/react-dom'
 
 // todo: useReducer
 let lastState;
@@ -20,6 +17,11 @@ function useReducer(reducer, initialState) {
   }
   return [lastState, dispatch]
 }
+
+// todo: useState
+// function useState(initialState) {
+//   return useReducer(null, initialState)
+// }
 
 const reducer = (oldState, action) => {
   switch(action.type) {
@@ -46,9 +48,6 @@ function Counter() {
     </div>
   )
 }
-
-// const element = <Form />
-// console.log(JSON.stringify(element, null, 2))
 
 function render() {
   ReactDOM.render(
