@@ -1,10 +1,6 @@
 import React from 'react';
-// import React from 'react'
 import ReactDOM from 'react-dom'
 import './index.css'
-// import React from './lib/react'
-// import ReactDOM from './lib/react-dom'
-
 
 const Context = React.createContext()
 
@@ -32,7 +28,6 @@ function useReducer(reducer, initialState) {
 // todo: useContext
 function useContext(Context) {
   console.dir(Context)
-  console.dir(Context._currentValue)
   return Context._currentValue
 }
 
@@ -69,9 +64,6 @@ function App() {
     <Counter />
   </Context.Provider>
 }
-
-// const element = <Form />
-// console.log(JSON.stringify(element, null, 2))
 
 function render() {
   ReactDOM.render(
