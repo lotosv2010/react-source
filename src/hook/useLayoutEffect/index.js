@@ -1,11 +1,6 @@
 import React, {useRef} from 'react';
-// import React from 'react'
 import ReactDOM from 'react-dom'
 import './index.css'
-// import React from './lib/react'
-// import ReactDOM from './lib/react-dom'
-
-
 // todo: useEffect
 function useEffect(callback) {
   // 直接把callback放在宏任务队列中
@@ -41,9 +36,6 @@ function Animation() {
     </div>
   )
 }
-
-// const element = <Form />
-// console.log(JSON.stringify(element, null, 2))
 
 function render() {
   ReactDOM.render(
