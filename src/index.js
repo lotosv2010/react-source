@@ -1,54 +1,39 @@
-import React, {useRef} from 'react';
-// import React from 'react'
+import React from 'react'
 import ReactDOM from 'react-dom'
-import './index.css'
-// import React from './lib/react'
-// import ReactDOM from './lib/react-dom'
+import {BrowserRouter as Router, Route, Redirect, Switch} from './react-router-dom'
 
 
-// todo: useEffect
-function useEffect(callback) {
-  // 直接把callback放在宏任务队列中
-  setTimeout(callback)
-}
-// todo: useLayoutEffect
-function useLayoutEffect(callback) {
-  // 直接把callback放在then中，then的回调是一个微任务，会在页面渲染或绘制前执行
-  // Promise.resolve().then(callback)
-  // todo: 参考https://developer.mozilla.org/zh-CN/docs/Web/API/HTML_DOM_API/Microtask_guide
-  queueMicrotask(callback)
-}
-
-function Animation() {
-  const ref = useRef()
-  useEffect(() => {
-    ref.current.style.transform = 'translateX(500px)'
-    ref.current.style.transition = 'all 500ms'
-  })
-
-  useLayoutEffect(() => {
-    ref.current.style.transform = 'translateY(500px)'
-    ref.current.style.transition = 'all 500ms'
-  })
-  const styleObj = {
-    width: 100,
-    height: 100,
-    backgroundColor: 'red'
-  }
+const Home = () => {
   return (
-    <div>
-      <div style={styleObj} ref={ref}></div>
-    </div>
+    <div> Home </div>
   )
 }
 
-// const element = <Form />
-// console.log(JSON.stringify(element, null, 2))
-
-function render() {
-  ReactDOM.render(
-    <Animation />,
-    document.getElementById('root')
+const User = () => {
+  return (
+    <div> user </div>
   )
 }
-render()
+
+function App() {
+  return(
+    <Router>
+      <div>
+        <ul>
+          {/* <li><Link to='/home'>home</Link></li>
+          <li><Link to='/user'>user</Link></li> */}
+        </ul>
+        <Switch>
+          <Route path='/user' component={User} />
+          <Route path='/home' exact={true} component={Home} />
+          <Redirect from='/' to='/home' />
+        </Switch>
+      </div>
+    </Router>
+  )
+}
+
+ReactDOM.render(
+  <App />,
+  document.getElementById('root')
+)
