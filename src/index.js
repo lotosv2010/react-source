@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
-import {BrowserRouter as Router, Route} from './react-router-dom'
+import {BrowserRouter as Router, Route, Switch} from './react-router-dom'
 
 
 const Home = () => {
@@ -23,11 +23,11 @@ function App() {
           {/* <li><Link to='/home'>home</Link></li>
           <li><Link to='/user'>user</Link></li> */}
         </ul>
-        {/* <Switch> */}
+        <Switch>
           <Route path='/user' component={User} />
           <Route path='/home' component={Home} />
           {/* <Redirect from='/' to='/home' /> */}
-        {/* </Switch> */}
+        </Switch>
       </div>
     </Router>
   )
