@@ -36,7 +36,7 @@ function createBrowserHistory() {
   function setState(nextState) {
     Object.assign(history, nextState)
     history.length = globalHistory.length
-    listeners.forEach(listen => listen())
+    listeners.forEach(listen => listen(nextState))
   }
   function push(path) {
     const action = 'PUSH'
@@ -48,7 +48,7 @@ function createBrowserHistory() {
       state = path.state
     }
     const location = { pathname, state}
-    globalHistory.pushState(state, null, path)
+    globalHistory.pushState(state, null, pathname)
     setState({action, location})
   }
   const history = {

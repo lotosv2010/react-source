@@ -133,3 +133,11 @@ const element = React.createElement('h1',
 ### history
 
 ### react-router
+
+#### Router
+
+#### Route
+
+#### Switch
+
+#### Redirect

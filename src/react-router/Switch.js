@@ -10,9 +10,10 @@ class Switch extends Component {
             const {location} = context
             let element, match
             React.Children.forEach(this.props.children, child => {
-              if(match == null && React.isValidElement(child)) {
+              if(!match && React.isValidElement(child)) {
                 element = child
-                const {path} = child.props
+                // todo:兼容 Redirect
+                const path = child.props.path || child.props.from
                 const {pathname} = location
                 // 当前地址栏中的路径和此子元素的路径进行匹配
                 match = matchPath(pathname, {...child.props, path})

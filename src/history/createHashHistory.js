@@ -11,11 +11,11 @@ function createHashHistory() {
   function setState(nextState) {
     Object.assign(history, nextState)
     history.length = globalHistory.length
-    listeners.forEach(listen => listen())
+    listeners.forEach(listen => listen(history))
   }
   window.addEventListener('hashchange', () => {
     const pathname = window.location.hash.slice(1)
-    setState({...state, pathname})
+    setState({location: {...state, pathname}})
   })
   function push(path) {
     const action = 'PUSH'
@@ -26,8 +26,8 @@ function createHashHistory() {
       pathname = path.pathname
       state = path.state
     }
-    window.location.hash = pathname
     const location = { pathname, state}
+    window.location.hash = pathname
     setState({action, location})
   }
   const history = {

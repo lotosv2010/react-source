@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
-import {BrowserRouter as Router, Route, Switch} from './react-router-dom'
+import {HashRouter as Router, Route, Switch, Redirect, Link} from './react-router-dom'
 
 
 const Home = () => {
@@ -20,13 +20,13 @@ function App() {
     <Router>
       <div>
         <ul>
-          {/* <li><Link to='/home'>home</Link></li>
-          <li><Link to='/user'>user</Link></li> */}
+          <li><Link to='/home'>home</Link></li>
+          <li><Link to='/user'>user</Link></li>
         </ul>
         <Switch>
           <Route path='/user' component={User} />
           <Route path='/home' component={Home} />
-          {/* <Redirect from='/' to='/home' /> */}
+          <Redirect from='/' to='/home' />
         </Switch>
       </div>
     </Router>

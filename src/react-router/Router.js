@@ -6,13 +6,12 @@ class Router extends Component {
     this.state = {
       location: props.history.location // 当前的路径
     }
-  }
-  // todo:路径发生变化的时候，重新刷新Router组件，让里面的组件重新渲染
-  componentDidMount() {
+    // todo:路径发生变化的时候，重新刷新Router组件，让里面的组件重新渲染
     this.unListen = this.props.history.listen(({location}) => {
       this.setState({location})
     })
   }
+  
   componentWillUnmount() {
     this.unListen()
   }
