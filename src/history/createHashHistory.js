@@ -6,7 +6,7 @@
 
 function createHashHistory() {
   const globalHistory = window.history
-  const listeners = []
+  let listeners = []
   const state = globalHistory.state || {}
   function setState(nextState) {
     Object.assign(history, nextState)
@@ -39,7 +39,11 @@ function createHashHistory() {
     },
     push,
     listen(listener) {
-      return listeners.push(listener);
+      listeners.push(listener);
+      // 监听函数会返回一个取消监听的函数
+      return function () {
+        listeners = listeners.filter(item => item !== listener)
+      }
     }
   }
   return history

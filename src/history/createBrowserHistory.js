@@ -29,7 +29,7 @@
 
 function createBrowserHistory() {
   const globalHistory = window.history
-  const listeners = []
+  let listeners = []
   function go(delta) {
     globalHistory.go(delta)
   }
@@ -67,7 +67,11 @@ function createBrowserHistory() {
     },
     push,
     listen(listener) {
-      return listeners.push(listener);
+      listeners.push(listener);
+      // 监听函数会返回一个取消监听的函数
+      return function () {
+        listeners = listeners.filter(item => item !== listener)
+      }
     }
   }
   return history
