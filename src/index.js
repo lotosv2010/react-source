@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
-import {HashRouter as Router, Route, Switch, Redirect, Link} from './react-router-dom'
+import {BrowserRouter as Router, Route, Switch, Redirect, Link} from './react-router-dom'
 
 
 const Home = () => {

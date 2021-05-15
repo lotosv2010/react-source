@@ -130,7 +130,17 @@ const element = React.createElement('h1',
 
 ### react-router-dom
 
+#### BrowserRouter
+
+#### HashRouter
+
+#### Link
+
 ### history
+
+#### createBrowserHistory
+
+#### createHashHistory
 
 ### react-router
 
