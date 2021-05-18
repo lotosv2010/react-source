@@ -1,7 +1,8 @@
 import React, {useState, useEffect} from 'react'
 import ReactDOM from 'react-dom'
 import {BrowserRouter as Router, Route, Switch, Redirect, Link} from './react-router-dom'
-
+import Protected from './components/Protected'
+import Login from './components/Login'
 
 const Home = () => {
   return (
@@ -54,6 +55,14 @@ const User = () => {
   )
 }
 
+const Profile = () => {
+  return (
+    <div>
+      Protected
+    </div>
+  )
+}
+
 function App() {
   return(
     <Router>
@@ -61,16 +70,25 @@ function App() {
         <ul>
           <li><Link to='/home'>home</Link></li>
           <li><Link to='/user'>user</Link></li>
+          <li><Link to='/profile'>mine</Link></li>
         </ul>
         <Switch>
           <Route path='/user' exact={false} component={User} />
-          <Route path='/home' exact={true} component={Home} />
-          <Redirect from='/' to='/home' />
+          <Route path='/' exact={true} component={Home} />
+          <Route path='/login' component={Login} />
+          <Protected path='/profile' exact={true} component={Profile} />
+          <Redirect from='/home' to='/' />
         </Switch>
       </div>
     </Router>
   )
 }
+/** 
+ * todo:路由的三种渲染方式
+ * 1.component，不能加逻辑
+ * 2.render属性是一个函数，渲染函数的返回值
+ * 3.children
+ */
 
 ReactDOM.render(
   <App />,
