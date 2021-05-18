@@ -1,8 +1,9 @@
 import React, {useState, useEffect} from 'react'
 import ReactDOM from 'react-dom'
-import {BrowserRouter as Router, Route, Switch, Redirect, Link} from './react-router-dom'
+import {BrowserRouter as Router, Route, Switch, Redirect, Link, NavLink} from './react-router-dom'
 import Protected from './components/Protected'
 import Login from './components/Login'
+import './index.css'
 
 const Home = () => {
   return (
@@ -68,16 +69,33 @@ function App() {
     <Router>
       <div>
         <ul>
-          <li><Link to='/home'>home</Link></li>
-          <li><Link to='/user'>user</Link></li>
-          <li><Link to='/profile'>mine</Link></li>
+          <li>
+            <NavLink
+              to='/home'
+              activeClassName='active'
+              className='strong'
+              style={{textDecoration: 'underline'}}
+              activeStyle={{color: 'red'}}
+            >home</NavLink></li>
+          <li>
+            <NavLink
+              to='/user'
+              style={{textDecoration: 'underline'}}
+              activeStyle={{color: 'red'}}
+            >user</NavLink></li>
+          <li>
+            <NavLink
+              to='/profile'
+              style={{textDecoration: 'underline'}}
+              activeStyle={{color: 'red'}}
+            >mine</NavLink></li>
         </ul>
         <Switch>
           <Route path='/user' exact={false} component={User} />
-          <Route path='/' exact={true} component={Home} />
-          <Route path='/login' component={Login} />
+          <Route path='/home' exact={true} component={Home} />
+          <Route path='/login' exact={true} component={Login} />
           <Protected path='/profile' exact={true} component={Profile} />
-          <Redirect from='/home' to='/' />
+          <Redirect from='/' to='/home' />
         </Switch>
       </div>
     </Router>
