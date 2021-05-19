@@ -7,6 +7,7 @@
 function createHashHistory() {
   const globalHistory = window.history
   let listeners = []
+  let prompt
   const state = globalHistory.state || {}
   function setState(nextState) {
     Object.assign(history, nextState)
@@ -26,6 +27,12 @@ function createHashHistory() {
       pathname = path.pathname
       state = path.state
     }
+    // todo:Prompt，劫持push跳转
+    if(prompt) {
+      const message = prompt({pathname, state})
+      const result = window.confirm(message)
+      if(!result) return
+    }
     const location = { pathname, state}
     window.location.hash = pathname
     setState({action, location})
@@ -44,6 +51,10 @@ function createHashHistory() {
       return function () {
         listeners = listeners.filter(item => item !== listener)
       }
+    },
+    block(message) {
+      prompt = message
+      return () => prompt = null
     }
   }
   return history

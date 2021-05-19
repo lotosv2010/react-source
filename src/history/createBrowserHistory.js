@@ -30,6 +30,7 @@
 function createBrowserHistory() {
   const globalHistory = window.history
   let listeners = []
+  let prompt
   function go(delta) {
     globalHistory.go(delta)
   }
@@ -46,6 +47,12 @@ function createBrowserHistory() {
     } else if(typeof path === 'object') {
       pathname = path.pathname
       state = path.state
+    }
+    // todo:Prompt，劫持push跳转
+    if(prompt) {
+      const message = prompt({pathname, state})
+      const result = window.confirm(message)
+      if(!result) return
     }
     const location = { pathname, state}
     globalHistory.pushState(state, null, pathname)
@@ -72,6 +79,10 @@ function createBrowserHistory() {
       return function () {
         listeners = listeners.filter(item => item !== listener)
       }
+    },
+    block(message) {
+      prompt = message
+      return () => prompt = null
     }
   }
   return history
