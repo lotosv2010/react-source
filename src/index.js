@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom'
 import {BrowserRouter as Router, Route, Switch, Redirect, Link, NavLink} from './react-router-dom'
 import Protected from './components/Protected'
 import Login from './components/Login'
+import NavHeader from './components/NavHeader'
 import './index.css'
 
 const Home = () => {
@@ -68,6 +69,7 @@ function App() {
   return(
     <Router>
       <div>
+        <NavHeader title="Welcome React" />
         <ul>
           <li>
             <NavLink
