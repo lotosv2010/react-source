@@ -45,7 +45,7 @@ function App() {
         </ul>
         <Switch>
           <Route path='/user' exact={false} component={User} />
-          <Route path='/home' exact={true} component={Home} />
+          <Route path='/home' exact={true} children={() => <Home />} />
           <Route path='/login' exact={true} component={Login} />
           <Route path='/post/:title' exact={true} component={Post} />
           <Protected path='/profile' exact={true} component={Profile} />
