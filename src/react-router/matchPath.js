@@ -30,7 +30,6 @@ function matchPath(pathname, options={}) {
     url,  // 匹配到的路径
     isExact,// 是否精确匹配,
     params: keys.reduce((memo, key, index) => {
-      console.log(memo, key.name)
       memo[key.name] = values[index]
       return memo
     }, {}) // 路径参数对象

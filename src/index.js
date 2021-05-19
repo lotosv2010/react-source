@@ -7,6 +7,7 @@ import Login from './components/Login'
 import Home from './components/Home'
 import User from './components//User'
 import Profile from './components/Profile'
+import Post from './components/Post'
 import './index.css'
 
 function App() {
@@ -35,11 +36,18 @@ function App() {
               style={{textDecoration: 'underline'}}
               activeStyle={{color: 'red'}}
             >mine</NavLink></li>
+          <li>
+            <NavLink
+              to='/post/title'
+              style={{textDecoration: 'underline'}}
+              activeStyle={{color: 'red'}}
+            >post</NavLink></li>
         </ul>
         <Switch>
           <Route path='/user' exact={false} component={User} />
           <Route path='/home' exact={true} component={Home} />
           <Route path='/login' exact={true} component={Login} />
+          <Route path='/post/:title' exact={true} component={Post} />
           <Protected path='/profile' exact={true} component={Profile} />
           <Redirect from='/' to='/home' />
         </Switch>
