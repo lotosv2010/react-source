@@ -1,69 +1,13 @@
-import React, {useState, useEffect} from 'react'
+import React from 'react'
 import ReactDOM from 'react-dom'
-import {BrowserRouter as Router, Route, Switch, Redirect, Link, NavLink} from './react-router-dom'
+import {BrowserRouter as Router, Route, Switch, Redirect, NavLink} from './react-router-dom'
 import Protected from './components/Protected'
-import Login from './components/Login'
 import NavHeader from './components/NavHeader'
+import Login from './components/Login'
+import Home from './components/Home'
+import User from './components//User'
+import Profile from './components/Profile'
 import './index.css'
-
-const Home = () => {
-  return (
-    <div> Home </div>
-  )
-}
-
-const UserAdd = () => {
-  return (
-    <div> UserAdd </div>
-  )
-}
-
-const UserList = () => {
-  return (
-    <div>
-      <Link to={{pathname: `/user/detail/1001`, state: {id: '1001', username: 'test'}}}>userList</Link>
-    </div>
-  )
-}
-
-const UserDetail = (props) => {
-  console.log(props)
-  const user = props.location.state || {}
-  const [state, setState] = useState({})
-  const getInfo = () => {
-    setState(user)
-  }
-  useEffect(() => {
-    getInfo()
-  })
-  return (
-    <div> id: {state.id}, username: {state.username} </div>
-  )
-}
-
-const User = () => {
-  return (
-    <div>
-      <ul>
-        <li><Link to="/user/list">用户列表</Link></li>
-        <li><Link to="/user/add">添加用户</Link></li>
-      </ul>
-      <div>
-        <Route path="/user/add" component={UserAdd} />
-        <Route path="/user/list" component={UserList} />
-        <Route path="/user/detail/:id" component={UserDetail} />
-      </div>
-    </div>
-  )
-}
-
-const Profile = () => {
-  return (
-    <div>
-      Protected
-    </div>
-  )
-}
 
 function App() {
   return(
