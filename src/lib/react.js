@@ -1,4 +1,25 @@
 import Component from './component'
+
+// todo: lazy 动态路由
+function lazy(load) {
+  return class extends Component {
+    state = {Comp: null}
+    componentDidMount() {
+      load().then(result => {
+        this.setState({Comp: result.default || result})
+      })
+    }
+    render() {
+      const {Comp} = this.state
+      return Comp? <Comp {...this.props} /> : null
+    }
+  }
+}
+
+// todo: Suspense
+function Suspense(props) {
+  return props.children? props.children : props.fallback
+}
 /**
  * 创建react元素
  * @param {元素类型} type 
@@ -45,6 +66,8 @@ const React = {
   createElement,
   Component,
   createRef,
-  forwardRef
+  forwardRef,
+  lazy,
+  Suspense
 }
 export default React
