@@ -1,6 +1,6 @@
 import React, {Component, createRef} from 'react';
 import { Prompt } from '../../react-router-dom'
-class Login extends Component {
+class UserAdd extends Component {
   constructor(props) {
     super(props)
     this.state = {isBlocking: false} // 是否阻止跳
@@ -41,4 +41,4 @@ class Login extends Component {
     )
   }
 }
-export default Login
+export default UserAdd

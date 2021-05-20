@@ -136,6 +136,8 @@ const element = React.createElement('h1',
 
 #### Link
 
+#### NavLink
+
 ### history
 
 #### createBrowserHistory
@@ -151,3 +153,9 @@ const element = React.createElement('h1',
 #### Switch
 
 #### Redirect
+
+#### withRouter
+
+#### Prompt
+
+#### hooks
