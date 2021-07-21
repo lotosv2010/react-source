@@ -1,6 +1,15 @@
 # React Source
 
-## 一、实现虚拟DOM
+## 一、初始化项目
+
+```shell
+create-react-app react-source
+cd react-source
+npm i
+npm start
+```
+
+## 二、
 
 ### 子节点是数组
 
@@ -89,73 +98,3 @@ const element = React.createElement('h1',
   }
 }
 ```
-
-## 二、实现事件绑定
-
-## 三、实现批量更新
-
-## 四、实现setState
-
-## 五、实现createRef
-
-## 六、实现类组件ref
-
-## 七、实现forwardRef
-
-## 八、实现旧版生命周期
-
-## 九、实现新版生命周期
-
-## 十、useState
-
-## 十一、useCallback
-
-## 十二、useMemo
-
-## 十三、memo
-
-## 十四、useReducer
-
-## 十五、useContext
-
-## 十六、useEffect
-
-## 十七、useLayoutEffect
-
-## 十八、useRef
-
-## 十九、useImperativeHandle
-
-## 二十、router
-
-### react-router-dom
-
-#### BrowserRouter
-
-#### HashRouter
-
-#### Link
-
-#### NavLink
-
-### history
-
-#### createBrowserHistory
-
-#### createHashHistory
-
-### react-router
-
-#### Router
-
-#### Route
-
-#### Switch
-
-#### Redirect
-
-#### withRouter
-
-#### Prompt
-
-#### hooks
