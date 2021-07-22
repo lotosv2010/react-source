@@ -1,15 +1,20 @@
-import { ELEMENT, TEXT } from "./constant";
+import { CLASS_COMPONENT, ELEMENT, FUNCTION_COMPONENT, TEXT } from "./constant";
 import { ReactElement } from './vdom';
+import { Component } from "./component";
 
 function createElement(type, config={}, ...children) {
-  // if(config) {
-  //   Reflect.deleteProperty(config, '__source')
-  //   Reflect.deleteProperty(config, '__self')
-  // }
+  if(config) {
+    Reflect.deleteProperty(config, '__source')
+    Reflect.deleteProperty(config, '__self')
+  }
   const {key, ref, ...props} = config;
   let $$typeof = null;
   if(typeof type === 'string') { // 是一个原声的DOM类型，如 div、span、button
     $$typeof = ELEMENT;
+  } else if (typeof type === 'function' && type.prototype.isReactComponent) { // 是一个类组件
+    $$typeof = CLASS_COMPONENT;
+  } else if (typeof type === 'function') { // 是一个函数组件
+    $$typeof = FUNCTION_COMPONENT;
   }
   props.children = children.map(item => {
     if(typeof item === 'object') { // React.createElement('span', {style: {color: 'red'}}, 'hello')
@@ -20,7 +25,14 @@ function createElement(type, config={}, ...children) {
   })
   return ReactElement($$typeof, type, key, ref, props);
 }
-const React = {
+
+export {
+  Component,
   createElement
+}
+
+const React = {
+  createElement,
+  Component
 }
 export default React
