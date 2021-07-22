@@ -9,7 +9,7 @@ npm i
 npm start
 ```
 
-## 二、
+## 二、渲染原生组件
 
 ### 子节点是数组
 
@@ -98,3 +98,5 @@ const element = React.createElement('h1',
   }
 }
 ```
+
+## 三、渲染类组件和函数组件

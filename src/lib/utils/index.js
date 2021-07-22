@@ -35,3 +35,18 @@ function setProp(dom, key, value) {
     dom[key] = value;
   }
 }
+
+// 打平一个任意的多维数组, 避免 Array.prototype.flat 深克隆
+export function flatten(arr) {
+  const flatted = [];
+  (function flat(array) {
+    array.forEach(i => {
+      if(Array.isArray(i)) {
+        flat(i)
+      } else {
+        flatted.push(i)
+      }
+    });
+  })(arr);
+  return flatted;
+}
