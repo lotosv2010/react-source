@@ -1,3 +1,4 @@
+import {updateQueue} from '../react/component'
 /**
  * 在React我们并不是把事件绑定在DOM节点上，而是绑定到document上，类似事件委托
  * 1.因为合成事件可以屏蔽浏览器的差异，不同浏览器绑定事件和触发事件的方式不一样
@@ -24,6 +25,8 @@ function dispatchEvent(event) {
   let {type, target} = event;
   const eventType = `on${type}`;
   syntheticEvent = getSyntheticEvent(event);
+  // todo：在事件监听函数执行之前进入批量更新模式
+  updateQueue.isPending = true;
   // 模拟冒泡
   while(target) {
     const {eventStore} = target;
@@ -39,6 +42,10 @@ function dispatchEvent(event) {
       Reflect.deleteProperty(syntheticEvent, key);
     }
   }
+  // todo：当事件处理函数执行完成后，把批量更新模式改为 false
+  updateQueue.isPending = false;
+  // todo：执行批量更新，就是把缓存的 updater 全部执行了
+  updateQueue.batchUpdate();
 }
 
 // 如果执行了 persist ，就让 syntheticEvent 指向了一个新的对象， while循环结束后在清除的是新的对象

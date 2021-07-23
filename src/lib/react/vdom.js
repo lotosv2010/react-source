@@ -24,6 +24,7 @@ export function createDOM(element) {
     element = {...element, type: 'div'}
     dom = createNativeDOM(element)
   }
+  element.dom = dom; // 不管什么元素都让dom属性指向真实dom元素
   return dom
 }
 
@@ -38,7 +39,7 @@ function createNativeDOM(element) {
 }
 
 function createDOMChildren(parentNode, children) {
-  children && flatten(children).forEach((c, i) => {
+  children && flatten(Array.isArray(children) ? children: [children]).forEach((c, i) => {
     // c 其实是虚拟DOM
     // 我们在虚拟DOM上添加一个属性 _mountIndex，指向此虚拟DOM节点在父节点中的索引位置
     //! todo: 在后面的dom-diff的时候会用到
@@ -75,4 +76,24 @@ function createClassComponentDOM(element) {
   renderElement.dom = newDOM;
   //! todo: element.componentInstance.renderElement.dom => 真实DOM元素
   return newDOM;
+}
+
+export function compareTwoElement(oldRenderElement, newRenderElement) {
+  oldRenderElement = onlyOne(oldRenderElement);
+  newRenderElement = onlyOne(newRenderElement);
+  let currentDOM = oldRenderElement.dom; // 先取出老的DOM
+  let currentElement = oldRenderElement;
+  if(newRenderElement == null) { // 如果新的虚拟节点为null，则有删除老的节点
+    currentDOM.parentNode.removeChild(currentDOM);
+    currentDOM = null;
+  } else if(oldRenderElement.type !== newRenderElement.type) { // 虚拟节点类型不一样，则需要替换
+    const newDOM = createDOM(newRenderElement);
+    currentDOM.parentNode.replaceChild(newDOM, currentDOM);
+    currentElement = newRenderElement;
+  } else { //! todo：新老节点都有，并且类型一样，真正的 dom-diff
+    const newDOM = createDOM(newRenderElement);
+    currentDOM.parentNode.replaceChild(newDOM, currentDOM);
+    currentElement = newRenderElement;
+  }
+  return currentElement;
 }
