@@ -100,3 +100,5 @@ const element = React.createElement('h1',
 ```
 
 ## 三、渲染类组件和函数组件
+
+## 四、setState和组件更新

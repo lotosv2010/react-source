@@ -50,3 +50,7 @@ export function flatten(arr) {
   })(arr);
   return flatted;
 }
+
+export function isFunction(obj) {
+  return typeof obj === 'function';
+}
