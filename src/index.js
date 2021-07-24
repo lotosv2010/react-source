@@ -25,9 +25,14 @@ class Counter extends Component {
     }, 1000);
   }
   render() {
-    return createElement('div', {id: `counter-${this.state.number}`, onClick: this.handleClick}, '+')
+    return createElement(FCCounter, {number: this.state.number, handleClick: this.handleClick})
   }
 }
+
+function FCCounter(props) {
+  return createElement('div', {id: `counter-${props.number}`, onClick: props.handleClick}, createElement('p', {}, props.number), createElement('button', {}, '+'))
+}
+
 const element = createElement(Counter)
 
 ReactDOM.render(

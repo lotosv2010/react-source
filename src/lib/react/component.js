@@ -88,7 +88,7 @@ class Component {
     if(this.componentWillUpdate) {
       this.componentWillUpdate(); // 组件将要更新
     }
-    const newRenderElement = this.render();
+    const newRenderElement = this.render(); // 重新渲染获取新的React元素
     const currentElement = compareTwoElement(oldRenderElement, newRenderElement);
     this.renderElement = currentElement;
     if(this.componentDidUpdate) {

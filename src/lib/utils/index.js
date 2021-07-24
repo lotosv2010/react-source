@@ -24,6 +24,7 @@ export function setProps(dom, props) {
 } 
 
 function setProp(dom, key, value) {
+  // todo：如果说事件处理函数，新老属性对象都有，则删除老的监听，添加新的监听
   if(/^on/.test(key)) {
     // dom.addEventListener(key.toLowerCase().slice(2), value, false);
     addEvent(dom, key, value);
@@ -33,6 +34,25 @@ function setProp(dom, key, value) {
     }
   } else {
     dom[key] = value;
+  }
+}
+
+//! todo:
+//! 1.老有新没有 ==> 删除
+//! 2.老有新有  ==> 更新
+//! 3.老没有新有 ==> 添加
+export function patchProps(dom, oldProps, newProps) {
+  for(let key in oldProps) {
+    if(key !== 'children') { // 此处只处理自己的DOM属性，不处理 children 节点
+      if(!newProps.hasOwnProperty(key)) { //! 老有新没有 ==> 删除
+        dom.removeAttribute(key);
+      }
+    }
+  }
+  for(let key in oldProps) {
+    if(key !== 'children') { // 此处只处理自己的DOM属性，不处理 children 节点
+      setProp(dom, key, newProps[key]); //! 老没有新有 ==> 添加
+    }
   }
 }
 

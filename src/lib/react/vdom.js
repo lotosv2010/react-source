@@ -1,4 +1,4 @@
-import { onlyOne, setProps, flatten } from "../utils";
+import { onlyOne, setProps, flatten, patchProps } from "../utils";
 import { CLASS_COMPONENT, ELEMENT, FUNCTION_COMPONENT, TEXT } from "./constant";
 
 export function ReactElement($$typeof, type, key, ref, props) {
@@ -91,9 +91,49 @@ export function compareTwoElement(oldRenderElement, newRenderElement) {
     currentDOM.parentNode.replaceChild(newDOM, currentDOM);
     currentElement = newRenderElement;
   } else { //! todo：新老节点都有，并且类型一样，真正的 dom-diff
-    const newDOM = createDOM(newRenderElement);
-    currentDOM.parentNode.replaceChild(newDOM, currentDOM);
-    currentElement = newRenderElement;
+    updateElement(oldRenderElement, newRenderElement);
   }
   return currentElement;
+}
+
+function updateElement(oldElement, newElement) {
+  // 获取老的页面上真实存在的DOM节点
+  const currentDOM = newElement.dom = oldElement.dom;
+  if(oldElement.$$typeof === TEXT && newElement.$$typeof === TEXT) {
+    if(oldElement.content !== newElement.content) { // 如果老的文本内容和新的文本内容不一样
+      currentDOM.textContent = newElement.content;
+    }
+  } else if(oldElement.$$typeof === ELEMENT) { // 如果是元素类型
+    updateDOMProperties(currentDOM, oldElement.props, newElement.props);
+    // todo：递归更新子元素
+    // updateChildrenElement(currentDOM, oldElement.props.children, newElement.props.children);
+  } else if (oldElement.$$typeof === FUNCTION_COMPONENT) {
+    updateFunctionComponent(oldElement, newElement);
+  } else if (oldElement.$$typeof === CLASS_COMPONENT) {
+    updateClassComponent(oldElement, newElement)
+  }
+}
+
+function updateDOMProperties(dom, oldProps, newProps) {
+  patchProps(dom, oldProps, newProps);
+}
+
+//! 更新步骤
+// 1.拿到老元素
+// 2.重新执行函数组件拿到新元素进行对比
+function updateFunctionComponent(oldElement, newElement) {
+  const oldRenderElement = oldElement.renderElement; // 获取老的渲染出来的元素
+  const newRenderElement = newElement.type(newElement.props);
+  const currentElement = compareTwoElement(oldRenderElement, newRenderElement);
+  newElement.renderElement = currentElement; // 更新之后要重新挂载
+}
+
+//! 更新步骤
+// 1.拿到老元素
+// 2.重新执行类组件拿到新元素进行对比
+function updateClassComponent(oldElement, newElement) {
+  const componentInstance = oldElement.componentInstance; // 获取老的元素的类组件实例
+  const updater = componentInstance.$updater;
+  const newProps = newElement.props;
+  updater.emitUpdate(newProps);
 }
