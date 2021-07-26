@@ -1,5 +1,7 @@
 import { onlyOne, setProps, flatten, patchProps } from "../utils";
-import { CLASS_COMPONENT, ELEMENT, FUNCTION_COMPONENT, TEXT } from "./constant";
+import { CLASS_COMPONENT, ELEMENT, FUNCTION_COMPONENT, INSERT, MOVE, REMOVE, TEXT } from "./constant";
+let updateDepth = 0;
+const diffQueue = []; //! 这是一个补丁包，记录了哪些节点需要删除，哪些节点需要添加
 
 export function ReactElement($$typeof, type, key, ref, props) {
   const element = {$$typeof, type, key, ref, props}
@@ -104,6 +106,7 @@ function updateElement(oldElement, newElement) {
       currentDOM.textContent = newElement.content;
     }
   } else if(oldElement.$$typeof === ELEMENT) { // 如果是元素类型
+    //! 先更新的是父节点的属性，在比较更新子节点
     updateDOMProperties(currentDOM, oldElement.props, newElement.props);
     //! 递归更新子元素
     updateChildrenElement(currentDOM, oldElement.props.children, newElement.props.children);
@@ -141,13 +144,59 @@ function updateClassComponent(oldElement, newElement) {
 }
 
 function updateChildrenElement(dom, oldChildrenElements, newChildrenElements) {
-  diff(dom, oldChildrenElements, newChildrenElements);
+  updateDepth++; // 没进入一个新的子层级，就让 updateDepth++
+  diff(dom, oldChildrenElements, newChildrenElements, diffQueue);
+  updateDepth--; // 每比较完一层，返回上一级的时候，就 updateDepth--
+  if(updateDepth === 0) { // updateDepth等于0，说明回到了最上面一层了，整个更新对比就完事了
+    patch(diffQueue); // 把收集到的差异补丁传给patch方法进行更新
+    diffQueue.length = 0;
+  }
 }
 
 //!!! todo:dom-diff
+//! 1.先更新父节点还是先更新子节点？先更新的是父节点
+//! 2.先移动父节点还是先移动子节点？先移动的是子节点
 function diff(parentNode, oldChildrenElements, newChildrenElements) { // debugger
   const oldChildrenElementsMap = getChildrenElementsMap(oldChildrenElements);
   const newChildrenElementsMap = getNewChildrenElementsMap(oldChildrenElementsMap, newChildrenElements);
+  let lastIndex = 0;
+  //!!! 比较是深度优先的，所以先放子节点补丁，再放父节点补丁
+  for (let i = 0; i < newChildrenElements.length; i++) {
+    const newChildElement = newChildrenElements[i];
+    if(newChildElement) {
+      const newKey = newChildElement.key || i.toString();
+      const oldChildElement = oldChildrenElementsMap.get(newKey);
+      if(newChildElement === oldChildElement) { // 说明是同一个对象，是复用的老节点
+        if(oldChildElement._mountIndex < lastIndex) {
+          diffQueue.push({
+            parentNode, // 要移除那个父节点下的元素
+            type: MOVE,
+            fromIndex: oldChildElement._mountIndex,
+            toIndex: i
+          })
+        }
+        lastIndex = Math.max(lastIndex, oldChildElement._mountIndex);
+      } else { // 如果新老元素不相等，则直接插入
+        diffQueue.push({
+          parentNode,
+          type: INSERT,
+          toIndex: i,
+          dom: createDOM(newChildElement)
+        })
+      }
+      newChildElement._mountIndex = i; // 更新挂载索引
+    }
+  }
+  for (const [key, value] of oldChildrenElementsMap) {
+    if(!newChildrenElementsMap.get(key)) {
+      console.log(key, value)
+      diffQueue.push({
+        parentNode,
+        type: REMOVE,
+        fromIndex: value._mountIndex,
+      })
+    }
+  }
 }
 
 function getChildrenElementsMap(oldChildrenElements) {
@@ -187,4 +236,45 @@ function canDeepCompare(oldChildElement,newChildElement) {
     return oldChildElement.type === newChildElement.type; //如果类型一样，就可以复用了,就可以进行深度对比了
   }
   return false
+}
+
+//!!! 打补丁
+//! 1.把需要移动和删除的全部删除
+//! 2.把需要移动和新增的插入进来
+function patch(diffQueue) {
+  // console.log(JSON.stringify(diffQueue,null, 2))
+  const deleteMap = new Map();
+  const deleteChildren = [];
+  for (let i = 0; i < diffQueue.length; i++) {
+    const difference = diffQueue[i];
+    const {type, fromIndex} = difference;
+    if([MOVE, REMOVE].includes(type)) {
+      const oldChildDOM = difference.parentNode.children[fromIndex]; // 获取老的dom节点
+      deleteMap.set(fromIndex, oldChildDOM); // 为了后面方便复用，放到map里
+      deleteChildren.push(oldChildDOM);
+    }
+  }
+  // 把需要移动和删除的全部删除
+  deleteChildren.forEach((childDOM) => {
+    childDOM.parentNode.removeChild(childDOM);
+  })
+  for (let i = 0; i < diffQueue.length; i++) {
+    const {type, fromIndex, toIndex, parentNode, dom} = diffQueue[i];
+    switch (type) {
+      case INSERT:
+        insertChildAt(parentNode, dom, toIndex);
+        break;
+      case MOVE:
+        insertChildAt(parentNode, deleteMap.get(fromIndex), toIndex);
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+// 向index这个索引位置插入
+function insertChildAt(parentNode, newChildDom, index) {
+  const oldChild = parentNode.children[index]; // 先取出这个索引位置的老的DOM节点
+  oldChild ? parentNode.insertBefore(newChildDom, oldChild):parentNode.appendChild(newChildDom);
 }

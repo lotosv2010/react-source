@@ -106,3 +106,5 @@ const element = React.createElement('h1',
 ## 五、实现组件更新
 
 ## 六、实现比较更新子节点
+
+## 七、实现key的处理
