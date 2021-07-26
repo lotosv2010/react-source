@@ -15,14 +15,6 @@ class Counter extends Component {
   handleClick = () => {
     this.setState((state) => ({number: state.number + 1}))
     console.log(this.state.number)
-    this.setState((state) => ({number: state.number + 1}))
-    console.log(this.state.number)
-    setTimeout(() => {
-      this.setState((state) => ({number: state.number + 1}))
-      console.log(this.state.number)
-      this.setState((state) => ({number: state.number + 1}))
-      console.log(this.state.number)
-    }, 1000);
   }
   render() {
     return createElement(FCCounter, {number: this.state.number, handleClick: this.handleClick})

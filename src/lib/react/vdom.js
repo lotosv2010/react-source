@@ -105,8 +105,10 @@ function updateElement(oldElement, newElement) {
     }
   } else if(oldElement.$$typeof === ELEMENT) { // 如果是元素类型
     updateDOMProperties(currentDOM, oldElement.props, newElement.props);
-    // todo：递归更新子元素
-    // updateChildrenElement(currentDOM, oldElement.props.children, newElement.props.children);
+    //! 递归更新子元素
+    updateChildrenElement(currentDOM, oldElement.props.children, newElement.props.children);
+    // 会把 newElement 的 props 赋值给 oldElement
+    oldElement.props = newElement.props;
   } else if (oldElement.$$typeof === FUNCTION_COMPONENT) {
     updateFunctionComponent(oldElement, newElement);
   } else if (oldElement.$$typeof === CLASS_COMPONENT) {
@@ -136,4 +138,53 @@ function updateClassComponent(oldElement, newElement) {
   const updater = componentInstance.$updater;
   const newProps = newElement.props;
   updater.emitUpdate(newProps);
+}
+
+function updateChildrenElement(dom, oldChildrenElements, newChildrenElements) {
+  diff(dom, oldChildrenElements, newChildrenElements);
+}
+
+//!!! todo:dom-diff
+function diff(parentNode, oldChildrenElements, newChildrenElements) { // debugger
+  const oldChildrenElementsMap = getChildrenElementsMap(oldChildrenElements);
+  const newChildrenElementsMap = getNewChildrenElementsMap(oldChildrenElementsMap, newChildrenElements);
+}
+
+function getChildrenElementsMap(oldChildrenElements) {
+  const oldChildrenElementsMap = new Map();
+  for (let i = 0; i < oldChildrenElements.length; i++) {
+    const oldChildElement = oldChildrenElements[i];
+    const oldKey = oldChildElement.key || i.toString();
+    oldChildrenElementsMap.set(oldKey, oldChildElement);
+  }
+  return oldChildrenElementsMap;
+}
+
+function getNewChildrenElementsMap(oldChildrenElementsMap, newChildrenElements) {
+  const newChildrenElementsMap = new Map();
+  for (let i = 0; i < newChildrenElements.length; i++) {
+    const newChildElement = newChildrenElements[i];
+    if(newChildElement) { // 说明新节点不为null
+      const newKey = newChildElement.key || i.toString();
+      const oldChildElement = oldChildrenElementsMap.get(newKey);
+      //! 可以复用的条件
+      // 1.key一样
+      // 2.节点类型一样
+      if(canDeepCompare(oldChildElement,newChildElement)) {
+        //!!! 递归更新，复用老的DOM节点，用新的属性更新这个DOM节点
+        //!!! 在此处递归，更新父元素的时候，会递归更细每一个子元素
+        updateElement(oldChildElement, newChildElement);
+        newChildrenElements[i] = oldChildElement; // 复用老的DOM节点
+      }
+      newChildrenElementsMap.set(newKey, newChildrenElements[i]);
+    }
+  }
+  return newChildrenElementsMap;
+}
+
+function canDeepCompare(oldChildElement,newChildElement) {
+  if(!!oldChildElement && !!newChildElement) {
+    return oldChildElement.type === newChildElement.type; //如果类型一样，就可以复用了,就可以进行深度对比了
+  }
+  return false
 }
