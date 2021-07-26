@@ -108,3 +108,5 @@ const element = React.createElement('h1',
 ## 六、实现比较更新子节点
 
 ## 七、实现key的处理
+
+## 八、实现旧版生命周期

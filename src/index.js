@@ -5,40 +5,71 @@ import ReactDOM from './lib/react-dom/index';
 import './index.css';
 
 class Counter extends Component {
+  static defaultProps = {name: 'test'}
   constructor(props) {
     super(props);
-    this.state = {show: true}
+    this.state = {number: 0}
+    console.log('Counter constructor');
   }
-  // 在React中进行事件处理函数执行的时候，会进入批量更新模式
-  // 在执行此函数的时候，可能会引起多个组件的更新，但是因为当前是处于批量更新模式的
-  // 不会立即更新state，而是会把这个状态存起来，在事件函数执行完成后在全部更新这个脏组件
+  componentWillMount() {
+    console.log('Counter componentWillMount');
+  }
+  componentDidMount() {
+    console.log('Counter componentDidMount');
+  }
+  shouldComponentUpdate(nextProps, nextState) {
+    console.log('Counter shouldComponentUpdate');
+    return nextState.number > 1;
+  }
+  componentWillUpdate() {
+    console.log('Counter componentWillUpdate');
+  }
+  componentDidUpdate() {
+    console.log('Counter componentDidUpdate');
+  }
+  componentWillUnmount() {
+    console.log('Counter componentWillUnmount');
+  }
   handleClick = () => {
-    this.setState((state) => ({show: !state.show}))
+    this.setState((state) => ({number: state.number+1}))
   }
   render() {
-    return createElement(FCCounter, {show: this.state.show, onClick: this.handleClick})
+    console.log('Counter render');
+    return createElement('div', {},
+      createElement('p', {}, this.state.number),
+      this.state.number > 3? null : createElement(ChildCounter, {number: this.state.number}),
+      createElement('button', {onClick: this.handleClick}, '+')
+    )
   }
 }
 
-function FCCounter(props) {
-  const {onClick} = props
-  if(props.show) {
-    return createElement(
-      'ul', {id: `ul`, onClick},
-      createElement('li', {key: 'A'}, 'A'),
-      createElement('li', {key: 'B'}, 'B'),
-      createElement('li', {key: 'C'}, 'C'),
-      createElement('li', {key: 'D'}, 'D'),
-    )
-  } else {
-    return createElement(
-      'ul', {id: `ul`, onClick},
-      createElement('li', {key: 'A'}, 'A'),
-      createElement('li', {key: 'C'}, 'C'),
-      createElement('li', {key: 'B'}, 'B'),
-      createElement('li', {key: 'E'}, 'E'),
-      createElement('li', {key: 'F'}, 'F'),
-    )
+class ChildCounter extends Component {
+  constructor(props) {
+    super(props);
+    console.log('ChildCounter constructor');
+  }
+  componentWillMount() {
+    console.log('ChildCounter componentWillMount');
+  }
+  componentDidMount() {
+    console.log('ChildCounter componentDidMount');
+  }
+  shouldComponentUpdate(nextProps, nextState) {
+    console.log('ChildCounter shouldComponentUpdate');
+    return nextProps.number > 2;
+  }
+  componentWillUpdate() {
+    console.log('ChildCounter componentWillUpdate');
+  }
+  componentDidUpdate() {
+    console.log('ChildCounter componentDidUpdate');
+  }
+  componentWillUnmount() {
+    console.log('ChildCounter componentWillUnmount');
+  }
+  render() {
+    console.log('Counter render');
+    return createElement('div', {}, this.props.number)
   }
 }
 

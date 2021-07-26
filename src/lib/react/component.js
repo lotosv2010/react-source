@@ -66,6 +66,7 @@ class Updater {
 function shouldUpdate(componentInstance, nextProps, nextState) {
   componentInstance.props = nextProps;
   componentInstance.state = nextState;
+  // todo: old-lifecycle
   if(componentInstance.shouldComponentUpdate && !componentInstance.shouldComponentUpdate(nextProps, nextState)) {
     return false; // 不更新
   }
@@ -83,14 +84,16 @@ class Component {
     this.$updater.addState(partialState);
   }
   forceUpdate() { // 组件实际更新
-    console.log('forceUpdate');
+    // console.log('forceUpdate');
     const {renderElement: oldRenderElement} = this;
+    // todo: old-lifecycle
     if(this.componentWillUpdate) {
       this.componentWillUpdate(); // 组件将要更新
     }
     const newRenderElement = this.render(); // 重新渲染获取新的React元素
     const currentElement = compareTwoElement(oldRenderElement, newRenderElement);
     this.renderElement = currentElement;
+    // todo: old-lifecycle
     if(this.componentDidUpdate) {
       this.componentDidUpdate(); //组件更新完成
     }

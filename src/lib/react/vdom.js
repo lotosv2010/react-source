@@ -70,12 +70,20 @@ function createClassComponentDOM(element) {
   const componentInstance = new type(props); // 创建类组件实例
   // todo: 当创建类组件实例后，会在类组件的虚拟DOM上添加一个属性 componentInstance 指向类组件的实例
   element.componentInstance = componentInstance;
+  // todo: old-lifecycle
+  if(componentInstance.componentWillMount) {
+    componentInstance.componentWillMount()
+  }
   const renderElement = componentInstance.render();
   // 在类组件实例上添加 renderElement，指向上一次要渲染的虚拟DOM节点
   //! todo：在后面组件更新的时候，会重新render，然后跟上一次的 renderElement 进行 dom-diff
   componentInstance.renderElement = renderElement;
   const newDOM = createDOM(renderElement);
   renderElement.dom = newDOM;
+  // todo: old-lifecycle
+  if(componentInstance.componentDidMount) {
+    componentInstance.componentDidMount()
+  }
   //! todo: element.componentInstance.renderElement.dom => 真实DOM元素
   return newDOM;
 }
@@ -185,11 +193,18 @@ function diff(parentNode, oldChildrenElements, newChildrenElements) { // debugge
         })
       }
       newChildElement._mountIndex = i; // 更新挂载索引
+    } else {
+      // todo: old-lifecycle
+      const newKey = i.toString()
+      const oldChildrenElement = oldChildrenElementsMap.get(newKey);
+      if(oldChildrenElement.componentInstance && oldChildrenElement.componentInstance.componentWillUnmount) {
+        oldChildrenElement.componentInstance.componentWillUnmount()
+      }
     }
   }
   for (const [key, value] of oldChildrenElementsMap) {
     if(!newChildrenElementsMap.get(key)) {
-      console.log(key, value)
+      // console.log(key, value)
       diffQueue.push({
         parentNode,
         type: REMOVE,
