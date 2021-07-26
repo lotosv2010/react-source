@@ -51,7 +51,7 @@ class Updater {
     if(pendingState.length > 0) {
       pendingState.forEach(nextState => {
         if(isFunction(nextState)) {
-          state = nextState.call(componentInstance, state);
+          state = {...state, ...nextState.call(componentInstance, state)};
         } else {
           state = {...state, ...nextState}
         }

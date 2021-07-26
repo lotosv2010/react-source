@@ -30,6 +30,9 @@ class Counter extends Component {
   componentWillUnmount() {
     console.log('Counter componentWillUnmount');
   }
+  componentWillReceiveProps(nextProps) {
+    console.log('Counter componentWillReceiveProps', nextProps);
+  }
   handleClick = () => {
     this.setState((state) => ({number: state.number+1}))
   }
@@ -63,6 +66,9 @@ class ChildCounter extends Component {
   }
   componentDidUpdate() {
     console.log('ChildCounter componentDidUpdate');
+  }
+  componentWillReceiveProps(nextProps) {
+    console.log('ChildCounter componentWillReceiveProps', nextProps);
   }
   componentWillUnmount() {
     console.log('ChildCounter componentWillUnmount');

@@ -148,6 +148,10 @@ function updateClassComponent(oldElement, newElement) {
   const componentInstance = oldElement.componentInstance; // 获取老的元素的类组件实例
   const updater = componentInstance.$updater;
   const newProps = newElement.props;
+  // todo: old-lifecycle
+  if(componentInstance.componentWillReceiveProps) {
+    componentInstance.componentWillReceiveProps(newProps);
+  }
   updater.emitUpdate(newProps);
 }
 
