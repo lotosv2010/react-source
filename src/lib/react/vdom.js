@@ -74,6 +74,14 @@ function createClassComponentDOM(element) {
   if(componentInstance.componentWillMount) {
     componentInstance.componentWillMount()
   }
+  // todo: new-lifecycle
+  if(type.getDerivedStateFromProps) {
+    const prevState = componentInstance.state;
+    const newState = type.getDerivedStateFromProps(props, prevState)
+    if(newState) {
+      componentInstance.state = {...componentInstance.state, ...newState};
+    }
+  }
   const renderElement = componentInstance.render();
   // 在类组件实例上添加 renderElement，指向上一次要渲染的虚拟DOM节点
   //! todo：在后面组件更新的时候，会重新render，然后跟上一次的 renderElement 进行 dom-diff
@@ -151,6 +159,16 @@ function updateClassComponent(oldElement, newElement) {
   // todo: old-lifecycle
   if(componentInstance.componentWillReceiveProps) {
     componentInstance.componentWillReceiveProps(newProps);
+  }
+  // todo: new-lifecycle
+  if(newElement.type.getDerivedStateFromProps) {
+    const prevState = componentInstance.state;
+    const newState = newElement.type.getDerivedStateFromProps(newProps, prevState)
+    if(newState) {
+      componentInstance.state = {...componentInstance.state, ...newState};
+    } else {
+      // getDerivedStateFromProps 返回 null时，什么都不做
+    }
   }
   updater.emitUpdate(newProps);
 }

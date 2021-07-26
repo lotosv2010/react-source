@@ -110,3 +110,5 @@ const element = React.createElement('h1',
 ## 七、实现key的处理
 
 ## 八、实现旧版生命周期
+
+## 九、实现新版生命周期
