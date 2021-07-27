@@ -1,6 +1,7 @@
 import { CLASS_COMPONENT, ELEMENT, FUNCTION_COMPONENT, TEXT } from "./constant";
 import { ReactElement } from './vdom';
 import { Component } from "./component";
+import { onlyOne } from "../utils";
 
 function createElement(type, config={}, ...children) {
   if(config) {
@@ -17,7 +18,7 @@ function createElement(type, config={}, ...children) {
     $$typeof = FUNCTION_COMPONENT;
   }
   props.children = children.map(item => {
-    if(typeof item === 'object') { // React.createElement('span', {style: {color: 'red'}}, 'hello')
+    if(typeof item === 'object' || typeof item === 'function') { // React.createElement('span', {style: {color: 'red'}}, 'hello')
       return item;
     } else { // item = 'hello'
       return {$$typeof: TEXT, type: TEXT, content: item};
@@ -32,15 +33,32 @@ function createRef() {
   }
 }
 
+function createContext(defaultValue) {
+  Provider.value = defaultValue;
+  function Provider(props) {
+    Provider.value = props.value;
+    return props.children;
+  }
+  function Consumer(props) {
+    return onlyOne(props.children)(Provider.value);
+  }
+  return {
+    Provider,
+    Consumer
+  }
+}
+
 export {
   Component,
   createElement,
-  createRef
+  createRef,
+  createContext
 }
 
 const React = {
   createElement,
   Component,
-  createRef
+  createRef,
+  createContext
 }
 export default React

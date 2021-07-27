@@ -72,6 +72,9 @@ function createFunctionComponentDOM(element) {
 function createClassComponentDOM(element) {
   const {type, props, ref} = element; // type = 类组件
   const componentInstance = new type(props); // 创建类组件实例
+  if(type.contextType) {
+    componentInstance.context = type.contextType.Provider.value;
+  }
   //!!! ref
   if(ref) {
     ref.current = componentInstance;
@@ -135,6 +138,7 @@ function updateElement(oldElement, newElement) {
     //! 递归更新子元素
     updateChildrenElement(currentDOM, oldElement.props.children, newElement.props.children);
     // 会把 newElement 的 props 赋值给 oldElement
+    //!!! 复用老节点
     oldElement.props = newElement.props;
   } else if (oldElement.$$typeof === FUNCTION_COMPONENT) {
     updateFunctionComponent(oldElement, newElement);
@@ -161,9 +165,12 @@ function updateFunctionComponent(oldElement, newElement) {
 // 1.拿到老元素
 // 2.重新执行类组件拿到新元素进行对比
 function updateClassComponent(oldElement, newElement) {
-  const componentInstance = oldElement.componentInstance; // 获取老的元素的类组件实例
+  const componentInstance = newElement.componentInstance = oldElement.componentInstance; // 获取老的元素的类组件实例
   const updater = componentInstance.$updater;
   const newProps = newElement.props;
+  if(oldElement.type.contextType) {
+    componentInstance.context = oldElement.type.contextType.Provider.value;
+  }
   // todo: old-lifecycle
   if(componentInstance.componentWillReceiveProps) {
     componentInstance.componentWillReceiveProps(newProps);

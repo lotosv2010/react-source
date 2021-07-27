@@ -4,49 +4,64 @@ import ReactDOM from './lib/react-dom/index';
 // import ReactDOM from 'react-dom';
 import './index.css';
 
-class ScrollingList extends Component {
-  wrapper
-  timeID
+const ThemeContext = React.createContext()
+
+class GrandSon1 extends Component {
+  // 如果说你给一个类组件增加了一个静态属性 contextType
+  // 那么就可以通过 this.context这个属性来获取 provider 里面的 value
+  static contextType = ThemeContext
+  render() {
+    return createElement('div', {style: {margin: '10px', border: `5px solid ${this.context.color}`, padding: '5px'}}, 'GrandSon1')
+  }
+}
+class GrandSon2 extends React.Component {
+  static contextType = ThemeContext
+  render() {
+    return createElement('div', {style: {margin: '10px', border: `5px solid ${this.context.color}`, padding: '5px'}}, 'GrandSon2')
+  }
+}
+
+class Child1 extends React.Component {
+  static contextType = ThemeContext
+  render() {
+    return createElement('div', {style: {margin: '10px', border: `5px solid ${this.context.color}`, padding: '5px'}}, 'Child1', createElement(GrandSon1))
+  }
+}
+class Child2 extends React.Component {
+  static contextType = ThemeContext
+  render() {
+    return createElement('div', {style: {margin: '10px', border: `5px solid ${this.context.color}`, padding: '5px'}}, 'Child2', createElement(GrandSon2))
+  }
+}
+class Page extends React.Component {
   constructor(props) {
-    super(props);
-    this.state = {messages: []}
-    this.wrapper = React.createRef();
+    super(props)
+    this.state = {color: 'red'}
   }
-  addMessage = () => {
-    this.setState((state) => ({messages: [`${this.state.messages.length}`, ...state.messages]}))
-  }
-  componentDidMount() {
-    this.timeID = window.setInterval(() => {
-      this.addMessage();
-    }, 3000)
-  }
-  componentWillUnmount() {
-    window.clearInterval(this.timeID);
-  }
-  getSnapshotBeforeUpdate = () => {
-    console.log(this.wrapper)
-    return this.wrapper.current.scrollHeight;
-  }
-  componentDidUpdate(prevProps, prevState, prevScrollHeight) {
-    const curScrollTop = this.wrapper.current.scrollTop; // 当前卷去的高度
-    console.log(curScrollTop,  prevScrollHeight, this.wrapper.current.scrollHeight)
-    // 当前卷去的高度加上增加的高度
-    this.wrapper.current.scrollTop = curScrollTop + (this.wrapper.current.scrollHeight - prevScrollHeight)
+  changeColor = (color) => {
+    this.setState({color})
   }
   render() {
-    const style = {
-      height: '100px',
-      width: '200px',
-      border: '1px solid red',
-      overflow: 'auto'
+    const value = {
+      color: this.state.color,
+      changeColor: this.changeColor
     }
-    return createElement('div', {style, ref: this.wrapper},
-      this.state.messages.map((m, index) => (createElement('div', {key: index}, m)))
+    const onClick = () => {
+      const color = this.state.color === 'red' ? 'green' : 'red'
+      this.changeColor(color)
+    }
+    return createElement(ThemeContext.Provider, {value},
+      createElement('div', 
+        {style: {margin: '10px', border: `5px solid ${this.state.color}`, padding: '5px', width: '200px'}},
+        createElement(Child1),
+        createElement(Child2),
+        createElement('button', {onClick}, 'changeColor')
+      )
     )
   }
 }
 
-const element = createElement(ScrollingList)
+const element = createElement(Page)
 
 ReactDOM.render(
   <>
