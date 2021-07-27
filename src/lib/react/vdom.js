@@ -1,5 +1,6 @@
 import { onlyOne, setProps, flatten, patchProps } from "../utils";
 import { CLASS_COMPONENT, ELEMENT, FUNCTION_COMPONENT, INSERT, MOVE, REMOVE, TEXT } from "./constant";
+import {updateQueue} from './component';
 let updateDepth = 0;
 const diffQueue = []; //! 这是一个补丁包，记录了哪些节点需要删除，哪些节点需要添加
 
@@ -69,6 +70,13 @@ function createFunctionComponentDOM(element) {
   return newDOM;
 }
 
+function unstable_batchedUpdate(fn) {
+  updateQueue.isPending = true; // 强行处理批量模式
+  fn();
+  updateQueue.isPending = false;
+  updateQueue.batchUpdate();
+}
+
 function createClassComponentDOM(element) {
   const {type, props, ref} = element; // type = 类组件
   const componentInstance = new type(props); // 创建类组件实例
@@ -101,7 +109,7 @@ function createClassComponentDOM(element) {
   renderElement.dom = newDOM;
   // todo: old-lifecycle
   if(componentInstance.componentDidMount) {
-    componentInstance.componentDidMount()
+    unstable_batchedUpdate(() => componentInstance.componentDidMount());
   }
   //! todo: element.componentInstance.renderElement.dom => 真实DOM元素
   return newDOM;
@@ -191,7 +199,10 @@ function updateClassComponent(oldElement, newElement) {
 function updateChildrenElement(dom, oldChildrenElements, newChildrenElements) {
   updateDepth++; // 没进入一个新的子层级，就让 updateDepth++
   //! todo: 为什么需要打平？
-  diff(dom, flatten(oldChildrenElements), flatten(newChildrenElements), diffQueue);
+  // const flattenOldChildrenElements = flatten(oldChildrenElements);  // 不是一个数组
+  // const flattenNewChildrenElements = flatten(newChildrenElements);
+  // diff(dom, flattenOldChildrenElements, flattenNewChildrenElements, diffQueue);
+  diff(dom, oldChildrenElements, newChildrenElements, diffQueue);
   updateDepth--; // 每比较完一层，返回上一级的时候，就 updateDepth--
   if(updateDepth === 0) { // updateDepth等于0，说明回到了最上面一层了，整个更新对比就完事了
     patch(diffQueue); // 把收集到的差异补丁传给patch方法进行更新
