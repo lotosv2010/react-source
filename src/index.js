@@ -10,7 +10,7 @@ class ScrollingList extends Component {
   constructor(props) {
     super(props);
     this.state = {messages: []}
-    // this.wrapper = React.createRef();
+    this.wrapper = React.createRef();
   }
   addMessage = () => {
     this.setState((state) => ({messages: [`${this.state.messages.length}`, ...state.messages]}))
@@ -24,14 +24,14 @@ class ScrollingList extends Component {
     window.clearInterval(this.timeID);
   }
   getSnapshotBeforeUpdate = () => {
-    // return this.wrapper.current.scrollHeight;
-    return 100
+    console.log(this.wrapper)
+    return this.wrapper.current.scrollHeight;
   }
   componentDidUpdate(prevProps, prevState, prevScrollHeight) {
-    // const curScrollTop = this.wrapper.current.scrollTop; // 当前卷去的高度
-    console.log(prevProps,prevState,  prevScrollHeight)
+    const curScrollTop = this.wrapper.current.scrollTop; // 当前卷去的高度
+    console.log(curScrollTop,  prevScrollHeight, this.wrapper.current.scrollHeight)
     // 当前卷去的高度加上增加的高度
-    // this.wrapper.current.scrollTop = curScrollTop + (this.wrapper.current.scrollHeight - prevScrollHeight)
+    this.wrapper.current.scrollTop = curScrollTop + (this.wrapper.current.scrollHeight - prevScrollHeight)
   }
   render() {
     const style = {

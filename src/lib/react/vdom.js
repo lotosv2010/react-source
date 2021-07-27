@@ -31,12 +31,16 @@ export function createDOM(element) {
 }
 
 function createNativeDOM(element) {
-  const {type, props} = element; // 如 button span 等
+  const {type, props, ref} = element; // 如 button span 等
   const dom = document.createElement(type);
   // todo 1.创建虚拟DOM节点的子节点
   createDOMChildren(dom, props.children);
   // todo 2.给此DOM元素添加属性
   setProps(dom, props);
+  //!!! ref
+  if(ref) {
+    ref.current = dom;
+  }
   return dom
 }
 
@@ -66,8 +70,12 @@ function createFunctionComponentDOM(element) {
 }
 
 function createClassComponentDOM(element) {
-  const {type, props} = element; // type = 类组件
+  const {type, props, ref} = element; // type = 类组件
   const componentInstance = new type(props); // 创建类组件实例
+  //!!! ref
+  if(ref) {
+    ref.current = componentInstance;
+  }
   // todo: 当创建类组件实例后，会在类组件的虚拟DOM上添加一个属性 componentInstance 指向类组件的实例
   element.componentInstance = componentInstance;
   // todo: old-lifecycle
@@ -175,7 +183,8 @@ function updateClassComponent(oldElement, newElement) {
 
 function updateChildrenElement(dom, oldChildrenElements, newChildrenElements) {
   updateDepth++; // 没进入一个新的子层级，就让 updateDepth++
-  diff(dom, oldChildrenElements, newChildrenElements, diffQueue);
+  //! todo: 为什么需要打平？
+  diff(dom, flatten(oldChildrenElements), flatten(newChildrenElements), diffQueue);
   updateDepth--; // 每比较完一层，返回上一级的时候，就 updateDepth--
   if(updateDepth === 0) { // updateDepth等于0，说明回到了最上面一层了，整个更新对比就完事了
     patch(diffQueue); // 把收集到的差异补丁传给patch方法进行更新

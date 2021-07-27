@@ -112,3 +112,5 @@ const element = React.createElement('h1',
 ## 八、实现旧版生命周期
 
 ## 九、实现新版生命周期
+
+## 十、实现ref

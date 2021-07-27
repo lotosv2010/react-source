@@ -26,13 +26,21 @@ function createElement(type, config={}, ...children) {
   return ReactElement($$typeof, type, key, ref, props);
 }
 
+function createRef() {
+  return {
+    current: null
+  }
+}
+
 export {
   Component,
-  createElement
+  createElement,
+  createRef
 }
 
 const React = {
   createElement,
-  Component
+  Component,
+  createRef
 }
 export default React
