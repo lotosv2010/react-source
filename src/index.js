@@ -4,46 +4,49 @@ import ReactDOM from './lib/react-dom/index';
 // import ReactDOM from 'react-dom';
 import './index.css';
 
-class Counter extends Component {
-  static defaultProps = {name: 'test'}
+class ScrollingList extends Component {
+  wrapper
+  timeID
   constructor(props) {
     super(props);
-    this.state = {number: 2}
+    this.state = {messages: []}
+    // this.wrapper = React.createRef();
   }
-  handleClick = () => {
-    this.setState((state) => ({number: state.number+1}))
+  addMessage = () => {
+    this.setState((state) => ({messages: [`${this.state.messages.length}`, ...state.messages]}))
+  }
+  componentDidMount() {
+    this.timeID = window.setInterval(() => {
+      this.addMessage();
+    }, 3000)
+  }
+  componentWillUnmount() {
+    window.clearInterval(this.timeID);
+  }
+  getSnapshotBeforeUpdate = () => {
+    // return this.wrapper.current.scrollHeight;
+    return 100
+  }
+  componentDidUpdate(prevProps, prevState, prevScrollHeight) {
+    // const curScrollTop = this.wrapper.current.scrollTop; // 当前卷去的高度
+    console.log(prevProps,prevState,  prevScrollHeight)
+    // 当前卷去的高度加上增加的高度
+    // this.wrapper.current.scrollTop = curScrollTop + (this.wrapper.current.scrollHeight - prevScrollHeight)
   }
   render() {
-    return createElement('div', {},
-      createElement('p', {}, this.state.number),
-      createElement(ChildCounter, {number: this.state.number}),
-      createElement('button', {onClick: this.handleClick}, '+')
+    const style = {
+      height: '100px',
+      width: '200px',
+      border: '1px solid red',
+      overflow: 'auto'
+    }
+    return createElement('div', {style, ref: this.wrapper},
+      this.state.messages.map((m, index) => (createElement('div', {key: index}, m)))
     )
   }
 }
 
-class ChildCounter extends Component {
-  constructor(props) {
-    super(props);
-    this.state = {number: 0}
-  }
-  // 从新的属性对象中派生state状态
-  static getDerivedStateFromProps(nextProps, prevState) {
-    const {number} = nextProps;
-    if(number % 2 === 0) {
-      return {number: number * 2} // 偶数*2
-    } else {
-      return {number: number * 3} // 奇数*3
-    }
-    // 否则，对于state不进行任何操作
-    // return null;
-  }
-  render() {
-    return createElement('div', {}, this.state.number)
-  }
-}
-
-const element = createElement(Counter)
+const element = createElement(ScrollingList)
 
 ReactDOM.render(
   <>

@@ -85,17 +85,20 @@ class Component {
   }
   forceUpdate() { // 组件实际更新
     // console.log('forceUpdate');
-    const {renderElement: oldRenderElement} = this;
+    const {renderElement: oldRenderElement, props, state} = this;
     // todo: old-lifecycle
     if(this.componentWillUpdate) {
       this.componentWillUpdate(); // 组件将要更新
     }
+    // todo: new-lifecycle
+    const { getSnapshotBeforeUpdate } = this;
+    const extraArgs = getSnapshotBeforeUpdate && getSnapshotBeforeUpdate();
     const newRenderElement = this.render(); // 重新渲染获取新的React元素
     const currentElement = compareTwoElement(oldRenderElement, newRenderElement);
     this.renderElement = currentElement;
     // todo: old-lifecycle
     if(this.componentDidUpdate) {
-      this.componentDidUpdate(); //组件更新完成
+      this.componentDidUpdate(props, state, extraArgs); //组件更新完成
     }
   }
 }
