@@ -51,7 +51,7 @@ class Updater {
     if(pendingState.length > 0) {
       pendingState.forEach(nextState => {
         if(isFunction(nextState)) {
-          state = nextState.call(componentInstance, state);
+          state = {...state, ...nextState.call(componentInstance, state)};
         } else {
           state = {...state, ...nextState}
         }
@@ -66,6 +66,7 @@ class Updater {
 function shouldUpdate(componentInstance, nextProps, nextState) {
   componentInstance.props = nextProps;
   componentInstance.state = nextState;
+  // todo: old-lifecycle
   if(componentInstance.shouldComponentUpdate && !componentInstance.shouldComponentUpdate(nextProps, nextState)) {
     return false; // 不更新
   }
@@ -83,16 +84,21 @@ class Component {
     this.$updater.addState(partialState);
   }
   forceUpdate() { // 组件实际更新
-    console.log('forceUpdate');
-    const {renderElement: oldRenderElement} = this;
+    // console.log('forceUpdate');
+    const {renderElement: oldRenderElement, props, state} = this;
+    // todo: old-lifecycle
     if(this.componentWillUpdate) {
       this.componentWillUpdate(); // 组件将要更新
     }
-    const newRenderElement = this.render();
+    // todo: new-lifecycle
+    const { getSnapshotBeforeUpdate } = this;
+    const extraArgs = getSnapshotBeforeUpdate && getSnapshotBeforeUpdate();
+    const newRenderElement = this.render(); // 重新渲染获取新的React元素
     const currentElement = compareTwoElement(oldRenderElement, newRenderElement);
     this.renderElement = currentElement;
+    // todo: old-lifecycle
     if(this.componentDidUpdate) {
-      this.componentDidUpdate(); //组件更新完成
+      this.componentDidUpdate(props, state, extraArgs); //组件更新完成
     }
   }
 }

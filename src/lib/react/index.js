@@ -1,6 +1,7 @@
 import { CLASS_COMPONENT, ELEMENT, FUNCTION_COMPONENT, TEXT } from "./constant";
 import { ReactElement } from './vdom';
 import { Component } from "./component";
+import { flatten, onlyOne } from "../utils";
 
 function createElement(type, config={}, ...children) {
   if(config) {
@@ -16,8 +17,10 @@ function createElement(type, config={}, ...children) {
   } else if (typeof type === 'function') { // 是一个函数组件
     $$typeof = FUNCTION_COMPONENT;
   }
+  //!!! 防止updateChildrenElement中打平，数组不指向同一个地址引用
+  children = flatten(children);
   props.children = children.map(item => {
-    if(typeof item === 'object') { // React.createElement('span', {style: {color: 'red'}}, 'hello')
+    if(typeof item === 'object' || typeof item === 'function') { // React.createElement('span', {style: {color: 'red'}}, 'hello')
       return item;
     } else { // item = 'hello'
       return {$$typeof: TEXT, type: TEXT, content: item};
@@ -26,13 +29,38 @@ function createElement(type, config={}, ...children) {
   return ReactElement($$typeof, type, key, ref, props);
 }
 
+function createRef() {
+  return {
+    current: null
+  }
+}
+
+function createContext(defaultValue) {
+  Provider.value = defaultValue;
+  function Provider(props) {
+    Provider.value = props.value;
+    return props.children;
+  }
+  function Consumer(props) {
+    return onlyOne(props.children)(Provider.value);
+  }
+  return {
+    Provider,
+    Consumer
+  }
+}
+
 export {
   Component,
-  createElement
+  createElement,
+  createRef,
+  createContext
 }
 
 const React = {
   createElement,
-  Component
+  Component,
+  createRef,
+  createContext
 }
 export default React
