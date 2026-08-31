@@ -6,14 +6,16 @@ React 18 源码的个人还原实现。目标是照着官方仓库 [facebook/rea
 
 - TypeScript
 - pnpm workspace（monorepo）
-- ESLint 8 + Prettier
+- ESLint 10 + Prettier
+- Rollup（构建）+ Turbo（任务编排）
+- Husky + lint-staged + commitlint（提交检查）
 
 ## 目录结构
 
 参照官方 `packages/` 划分，按渲染链路推进顺序逐步搭建：
 
 - `packages/shared` — 跨包共享的工具函数、常量、类型
-- `packages/react` — React 核心 API（createElement、Component、hooks 入口等）（待搭建）
+- `packages/react` — React 核心 API（createElement、Component、hooks 入口等）
 - `packages/react-reconciler` — 协调器（Fiber、diff、commit）（待搭建）
 - `packages/react-dom` — DOM 渲染器（待搭建）
 - `packages/scheduler` — 调度器（时间切片、优先级）（待搭建）
@@ -33,7 +35,14 @@ pnpm format:check
 
 # 类型检查
 npx tsc --noEmit
+
+# 构建（输出 cjs / esm / iife 三种产物）
+pnpm build
 ```
+
+## 提交规范
+
+commit message 使用中文描述，遵循 [Conventional Commits](https://www.conventionalcommits.org/) 格式（`type: 描述`），由 commitlint 校验。
 
 ## 开发约定
 
