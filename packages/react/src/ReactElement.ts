@@ -127,6 +127,8 @@ export interface ReactElementType {
   _store?: { validated: boolean };
   _self?: any;
   _source?: any;
+  // 本项目标识：用于在控制台区分官方 React 和本项目实现
+  __react_source?: string;
 }
 
 // 对照官方 ReactElement 工厂函数：不是 class，不能用 new 调用，
@@ -171,10 +173,20 @@ const ReactElement = function (
       writable: false,
       value: source,
     });
+    // 本项目标识：定义为不可枚举，方便在控制台 inspect 时区分官方 React
+    Object.defineProperty(element, "__react_source", {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: "react-source-project",
+    });
     if (Object.freeze) {
       Object.freeze(element.props);
       Object.freeze(element);
     }
+  } else {
+    // prod 模式下也添加标识，但作为普通属性
+    element.__react_source = "react-source-project";
   }
 
   return element;

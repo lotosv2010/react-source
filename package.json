@@ -5,7 +5,7 @@
   "license": "MIT",
   "packageManager": "pnpm@11.24.0",
   "scripts": {
-    "dev": "vite --config scripts/vite/vite.config.mts --force",
+    "dev": "vite --config scripts/vite/vite.config.mts",
     "lint": "turbo run lint",
     "lint:fix": "eslint packages --fix --cache --cache-location node_modules/.cache/eslint/",
     "format": "prettier --write .",

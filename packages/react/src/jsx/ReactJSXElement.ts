@@ -165,10 +165,20 @@ const ReactElement = function (
       writable: false,
       value: source,
     });
+    // 本项目标识：定义为不可枚举，方便在控制台 inspect 时区分官方 React
+    Object.defineProperty(element, "__react_source", {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: "react-source-project",
+    });
     if (Object.freeze) {
       Object.freeze(element.props);
       Object.freeze(element);
     }
+  } else {
+    // prod 模式下也添加标识，但作为普通属性
+    element.__react_source = "react-source-project";
   }
 
   return element;
@@ -180,7 +190,7 @@ export function jsx(
   config: any,
   maybeKey?: Key,
 ): ReactElementType {
-  debugger;
+  // debugger;
   let propName: string;
 
   const props: Props = {};
