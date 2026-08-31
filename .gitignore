@@ -5,5 +5,8 @@ build
 .DS_Store
 .rollup.cache
 .turbo
-packages/*/npm
+# npm/ 目录下只有手写的分发文件（index.js、jsx-runtime.js ...）纳入 git，
+# cjs/、umd/ 是 rollup 构建产物子目录，不纳入
+packages/*/npm/cjs
+packages/*/npm/umd
 *.tsbuildinfo

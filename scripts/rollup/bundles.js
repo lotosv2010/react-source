@@ -1,12 +1,12 @@
 "use strict";
 
+// 对照官方 scripts/rollup/bundles.js 的 bundleTypes：react 18.3.1 实际发布包里没有 esm/，
+// 但有 umd/（iife 格式，UMD_DEV/UMD_PROD 两个产物），故这里对齐官方命名，不再用 ESM_*/BROWSER_SCRIPT
 const bundleTypes = {
   NODE_DEV: "NODE_DEV",
   NODE_PROD: "NODE_PROD",
-  ESM_DEV: "ESM_DEV",
-  ESM_PROD: "ESM_PROD",
-  // 对照官方 BROWSER_SCRIPT：给 <script> 标签直接引入用的全局变量包（iife 格式）
-  BROWSER_SCRIPT: "BROWSER_SCRIPT",
+  UMD_DEV: "UMD_DEV",
+  UMD_PROD: "UMD_PROD",
 };
 
 const moduleTypes = {
@@ -25,16 +25,33 @@ const bundles = [
     packageName: "react",
     name: "react",
     entry: "packages/react/src/index.ts",
-    // BROWSER_SCRIPT（iife）挂载到全局变量时用的名字，对应官方 window.React
+    // UMD（iife）挂载到全局变量时用的名字，对应官方 window.React
     global: "React",
     externals: [],
     bundleTypes: [
       bundleTypes.NODE_DEV,
       bundleTypes.NODE_PROD,
-      bundleTypes.ESM_DEV,
-      bundleTypes.ESM_PROD,
-      bundleTypes.BROWSER_SCRIPT,
+      bundleTypes.UMD_DEV,
+      bundleTypes.UMD_PROD,
     ],
+  },
+  // 对照官方 scripts/rollup/bundles.js 里 entry: 'react/jsx-runtime'：
+  // jsx-runtime/jsx-dev-runtime 官方只产出 NODE_DEV/NODE_PROD（cjs），没有 UMD 产物。
+  {
+    moduleType: moduleTypes.ISOMORPHIC,
+    packageName: "react",
+    name: "react-jsx-runtime",
+    entry: "packages/react/src/jsx-runtime.ts",
+    externals: [],
+    bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
+  },
+  {
+    moduleType: moduleTypes.ISOMORPHIC,
+    packageName: "react",
+    name: "react-jsx-dev-runtime",
+    entry: "packages/react/src/jsx-dev-runtime.ts",
+    externals: [],
+    bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
   },
 ];
 

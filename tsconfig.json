@@ -13,8 +13,12 @@
     "resolveJsonModule": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+    "jsx": "react-jsx",
     "paths": {
-      "shared/*": ["./packages/shared/*"]
+      "shared/*": ["./packages/shared/*"],
+      "react/jsx-dev-runtime": ["./packages/react/src/jsx-dev-runtime.ts"],
+      "react/jsx-runtime": ["./packages/react/src/jsx-runtime.ts"],
+      "react": ["./packages/react/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "dist", "build"]

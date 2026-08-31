@@ -2,6 +2,13 @@
   "name": "react",
   "version": "1.0.0",
   "private": true,
+  "main": "npm/index.js",
+  "exports": {
+    ".": "./npm/index.js",
+    "./package.json": "./package.json",
+    "./jsx-runtime": "./npm/jsx-runtime.js",
+    "./jsx-dev-runtime": "./npm/jsx-dev-runtime.js"
+  },
   "scripts": {
     "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/"
   },

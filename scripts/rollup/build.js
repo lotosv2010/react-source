@@ -9,38 +9,37 @@ const replace = require("@rollup/plugin-replace");
 const terser = require("@rollup/plugin-terser");
 
 const { bundles, bundleTypes } = require("./bundles");
+const { prepareNpmPackages } = require("./packaging");
 
-const { NODE_DEV, NODE_PROD, ESM_DEV, ESM_PROD, BROWSER_SCRIPT } = bundleTypes;
+const { NODE_DEV, NODE_PROD, UMD_DEV, UMD_PROD } = bundleTypes;
 
 function isProduction(type) {
-  return type === NODE_PROD || type === ESM_PROD;
+  return type === NODE_PROD || type === UMD_PROD;
 }
 
-function isESM(type) {
-  return type === ESM_DEV || type === ESM_PROD;
+function isUMD(type) {
+  return type === UMD_DEV || type === UMD_PROD;
 }
 
-// 对照官方 build.js 的 getFormat：BROWSER_SCRIPT 对应 iife（<script> 直接引入、挂全局变量）
+// 对照官方 build.js 的 getFormat：UMD_* 对应 iife（<script> 标签直接引入、挂全局变量）
 function getFormat(type) {
-  if (type === BROWSER_SCRIPT) {
-    return "iife";
-  }
-  return isESM(type) ? "esm" : "cjs";
+  return isUMD(type) ? "iife" : "cjs";
 }
 
+// 对照官方发布产物目录：NODE_* 落 cjs/，UMD_* 落 umd/
+function getOutputDir(type) {
+  return isUMD(type) ? "umd" : "cjs";
+}
+
+// 对照官方产物命名：目录已经区分了 cjs/esm/umd，文件名里不再重复格式后缀，只区分 development/production.min
 function getFilename(bundle, type) {
-  if (type === BROWSER_SCRIPT) {
-    return `${bundle.name}.development.js`;
-  }
-  const suffix = isProduction(type) ? "production" : "development";
-  const ext = isESM(type) ? "esm" : "cjs";
-  return `${bundle.name}.${ext}.${suffix}.js`;
+  const suffix = isProduction(type) ? "production.min" : "development";
+  return `${bundle.name}.${suffix}.js`;
 }
 
 async function buildBundle(bundle, type) {
   // 对照官方：__DEV__ 是构建时常量，dev 产物里为 true（保留校验/警告代码），
   // prod 产物里替换成 false 后交给 terser 做 dead code elimination 删掉这些分支。
-  // BROWSER_SCRIPT 目前只产出 development.js，因此也走 dev 分支。
   const isDev = !isProduction(type);
 
   const inputOptions = {
@@ -65,18 +64,20 @@ async function buildBundle(bundle, type) {
   };
 
   const outputOptions = {
+    // 对照官方：npm/ 目录本身是 git 跟踪的发布源码（index.js 等分发文件手写），
+    // 但 npm/cjs、npm/umd 是构建产物子目录，由 rollup 写入、被 .gitignore 忽略
     file: path.resolve(
       process.cwd(),
       "packages",
       bundle.packageName,
       "npm",
-      getFormat(type),
+      getOutputDir(type),
       getFilename(bundle, type),
     ),
     format: getFormat(type),
     exports: "named",
     // iife 格式需要 name 才能把 exports 挂到全局变量上（如 window.React）
-    name: type === BROWSER_SCRIPT ? bundle.global : undefined,
+    name: isUMD(type) ? bundle.global : undefined,
   };
 
   const build = await rollup.rollup(inputOptions);
@@ -95,6 +96,12 @@ async function main() {
       console.log(`built ${bundle.name} (${type})`);
     }
   }
+
+  // 对照官方 build.js 末尾调用 Packaging.prepareNpmPackages：
+  // 所有 bundle 打包完成后，把各包的构建产物 + LICENSE/README + 发布用 package.json
+  // 收集到 build/node_modules/<pkg>/，这里才是真正 npm publish 的包根。
+  const packageNames = [...new Set(bundles.map((bundle) => bundle.packageName))];
+  prepareNpmPackages(packageNames);
 }
 
 main().catch((error) => {
