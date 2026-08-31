@@ -1,0 +1,11 @@
+{
+  "name": "react",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/"
+  },
+  "dependencies": {
+    "shared": "workspace:*"
+  }
+}
