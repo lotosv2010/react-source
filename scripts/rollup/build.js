@@ -5,6 +5,8 @@ const rollup = require("rollup");
 const typescript = require("@rollup/plugin-typescript");
 const resolve = require("@rollup/plugin-node-resolve").default;
 const commonjs = require("@rollup/plugin-commonjs");
+const replace = require("@rollup/plugin-replace");
+const terser = require("@rollup/plugin-terser");
 
 const { bundles, bundleTypes } = require("./bundles");
 
@@ -36,6 +38,11 @@ function getFilename(bundle, type) {
 }
 
 async function buildBundle(bundle, type) {
+  // 对照官方：__DEV__ 是构建时常量，dev 产物里为 true（保留校验/警告代码），
+  // prod 产物里替换成 false 后交给 terser 做 dead code elimination 删掉这些分支。
+  // BROWSER_SCRIPT 目前只产出 development.js，因此也走 dev 分支。
+  const isDev = !isProduction(type);
+
   const inputOptions = {
     input: path.resolve(process.cwd(), bundle.entry),
     external: bundle.externals || [],
@@ -47,6 +54,13 @@ async function buildBundle(bundle, type) {
         declaration: false,
         composite: false,
       }),
+      replace({
+        preventAssignment: true,
+        values: {
+          __DEV__: JSON.stringify(isDev),
+        },
+      }),
+      ...(isDev ? [] : [terser({ compress: { dead_code: true }, mangle: false, format: { comments: false } })]),
     ],
   };
 
