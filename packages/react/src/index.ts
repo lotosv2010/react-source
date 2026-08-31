@@ -1,3 +1,8 @@
+/**
+ * @file React 主入口
+ * @description 导出 React 经典 API（createElement、isValidElement）
+ */
+
 import { createElement, isValidElement } from "./ReactElement";
 
 // 对照官方 packages/react/index.js re-export './src/React'：

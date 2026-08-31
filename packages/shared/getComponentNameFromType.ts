@@ -1,9 +1,20 @@
+/**
+ * @file 组件名称提取工具
+ * @description 从组件类型中提取显示名称，用于警告信息和调试
+ */
+
 import { REACT_FRAGMENT_TYPE } from "./ReactSymbols";
 import type { ElementType } from "./ReactTypes";
 
 // 对照官方 packages/shared/getComponentNameFromType.js（简化版）：
 // 只还原当前用得到的分支（函数组件、字符串标签、Fragment），
 // Context/Provider/ForwardRef/Memo/Lazy 等到对应功能落地时再补。
+
+/**
+ * 从组件类型提取显示名称
+ * @param type - 组件类型（函数、字符串标签、Fragment 等）
+ * @returns 组件的显示名称，无法提取时返回 null
+ */
 export default function getComponentNameFromType(
   type: ElementType,
 ): string | null {

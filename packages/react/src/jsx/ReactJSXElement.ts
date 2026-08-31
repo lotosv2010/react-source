@@ -1,3 +1,8 @@
+/**
+ * @file JSX automatic runtime 的 ReactElement 工厂实现
+ * @description 供 babel automatic runtime（jsx-runtime/jsx-dev-runtime）使用的 jsx()/jsxDEV() 实现
+ */
+
 import { checkKeyStringCoercion } from "shared/CheckStringCoercion";
 import getComponentNameFromType from "shared/getComponentNameFromType";
 import hasOwnProperty from "shared/hasOwnProperty";
@@ -31,6 +36,11 @@ if (__DEV__) {
   didWarnAboutStringRefs = {};
 }
 
+/**
+ * 检查 config 上是否携带有效的 ref
+ * @param config - JSX 调用传入的属性对象
+ * @returns config.ref 是否为有效值（排除警告 getter 的情况）
+ */
 function hasValidRef(config: any): boolean {
   if (__DEV__) {
     if (hasOwnProperty.call(config, "ref")) {
@@ -43,6 +53,11 @@ function hasValidRef(config: any): boolean {
   return config.ref !== undefined;
 }
 
+/**
+ * 检查 config 上是否携带有效的 key
+ * @param config - JSX 调用传入的属性对象
+ * @returns config.key 是否为有效值（排除警告 getter 的情况）
+ */
 function hasValidKey(config: any): boolean {
   if (__DEV__) {
     if (hasOwnProperty.call(config, "key")) {
@@ -58,6 +73,11 @@ function hasValidKey(config: any): boolean {
 // 对照官方：这里的签名是 (config, self)，和经典 ReactElement.ts 里的
 // warnIfStringRefCannotBeAutoConverted(config) 不同——self 单独传入而不是从 config.__self 取，
 // 因为 automatic runtime 的 self 是 jsxDEV 的独立参数，不像经典 createElement 那样塞进 config。
+/**
+ * DEV 下检查字符串 ref 能否被自动转换，不能则输出警告
+ * @param config - JSX 调用传入的属性对象
+ * @param self - jsxDEV 调用处的 this
+ */
 function warnIfStringRefCannotBeAutoConverted(config: any, self: any): void {
   if (__DEV__) {
     if (
@@ -85,6 +105,11 @@ function warnIfStringRefCannotBeAutoConverted(config: any, self: any): void {
   }
 }
 
+/**
+ * 给 props.key 定义一个只会警告的 getter，提示 key 不是真正的 prop
+ * @param props - 组件的 props 对象
+ * @param displayName - 组件显示名称，用于警告信息
+ */
 function defineKeyPropWarningGetter(props: Props, displayName: string): void {
   if (__DEV__) {
     const warnAboutAccessingKey = function () {
@@ -105,6 +130,11 @@ function defineKeyPropWarningGetter(props: Props, displayName: string): void {
   }
 }
 
+/**
+ * 给 props.ref 定义一个只会警告的 getter，提示 ref 不是真正的 prop
+ * @param props - 组件的 props 对象
+ * @param displayName - 组件显示名称，用于警告信息
+ */
 function defineRefPropWarningGetter(props: Props, displayName: string): void {
   if (__DEV__) {
     const warnAboutAccessingRef = function () {
@@ -127,6 +157,17 @@ function defineRefPropWarningGetter(props: Props, displayName: string): void {
 
 // 对照官方：jsx/ReactJSXElement.js 里的 ReactElement 工厂函数和 ../ReactElement.ts 里的
 // 是同一份逻辑的拷贝（官方注释里也说这是历史遗留的重复），保持两份独立是为了对照源码结构。
+/**
+ * ReactElement 工厂函数
+ * @param type - 元素类型
+ * @param key - 元素 key
+ * @param ref - 元素 ref
+ * @param self - DEV 专用，调用处的 this
+ * @param source - DEV 专用，调用处的文件位置
+ * @param owner - 创建该元素时的当前 owner（Fiber）
+ * @param props - 元素 props
+ * @returns 构造好的 ReactElement 对象
+ */
 const ReactElement = function (
   type: ElementType,
   key: Key,
@@ -185,12 +226,18 @@ const ReactElement = function (
 };
 
 // 对照官方 jsx()：automatic runtime 的生产版本，无 DEV 校验（校验在 jsxDEV 里）。
+/**
+ * jsx() - automatic runtime 生产环境入口
+ * @param type - 元素类型（标签名或组件）
+ * @param config - JSX 属性对象（包含 key/ref/props）
+ * @param maybeKey - 显式传入的 key（优先级高于 config.key）
+ * @returns 构造好的 ReactElement 对象
+ */
 export function jsx(
   type: ElementType,
   config: any,
   maybeKey?: Key,
 ): ReactElementType {
-  // debugger;
   let propName: string;
 
   const props: Props = {};
@@ -247,6 +294,15 @@ export function jsx(
 
 // 对照官方 jsxDEV()：DEV 模式下 automatic runtime 的入口，携带 source/self 做字符串 ref 警告，
 // 并给 props.key/ref 挂访问警告 getter。prod 构建里 __DEV__ 被替换为 false 后整段被 terser 删除。
+/**
+ * jsxDEV() - automatic runtime 开发环境入口
+ * @param type - 元素类型（标签名或组件）
+ * @param config - JSX 属性对象（包含 key/ref/props）
+ * @param maybeKey - 显式传入的 key（优先级高于 config.key）
+ * @param source - 调用处的文件位置（babel 插件注入）
+ * @param self - 调用处的 this
+ * @returns 构造好的 ReactElement 对象（prod 构建下此函数体被删除，返回 undefined）
+ */
 export function jsxDEV(
   type: ElementType,
   config: any,
@@ -254,7 +310,6 @@ export function jsxDEV(
   source: any,
   self: any,
 ): ReactElementType | undefined {
-  debugger;
   if (__DEV__) {
     let propName: string;
 
