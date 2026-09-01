@@ -28,6 +28,16 @@
 - **渐进式搭建**：按 React 渲染链路的自然顺序推进（如 createElement → Fiber 树构建 → 调度 → commit → hooks），不一次性铺全部模块骨架。
 - **commit message 用中文**：遵循 Conventional Commits 格式（`type: 描述`），描述部分用中文写，由 commitlint + husky 的 `commit-msg` hook 校验。
 
+## 效率约定（省 token / 省时间）
+
+写代码前的阅读要克制：**只读与当前改动直接相关的关键接口文件**（签名、导出、调用约定），读够就动手，不整包通读。像"新增 fixtures 调试案例"这类增量任务，默认走轻量路径：
+
+1. 读少量关键文件确认接口后直接实现；
+2. 用 `npx tsc --noEmit` + `npx vite build` 做一次构建验证即可；
+3. 让用户 `pnpm dev` 在浏览器实际查看效果，**不要**默认搭 jsdom 无头测试 + 官方 React 对照那套重验证（除非用户明确要）。
+
+"对照优先"是针对核心算法实现而言，不是要求每个小改动都反复对照验证；避免把验证手段选得过重造成返工。
+
 ## 当前状态
 
 monorepo 骨架与 reconciler 主链路已搭建：
