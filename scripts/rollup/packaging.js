@@ -56,6 +56,21 @@ function buildPublishPackageJson(sourcePackageJson) {
       },
     };
   }
+  if (sourcePackageJson.name === "scheduler") {
+    return {
+      name: sourcePackageJson.name,
+      description: sourcePackageJson.description,
+      keywords: sourcePackageJson.keywords,
+      version: sourcePackageJson.version,
+      license: sourcePackageJson.license || "MIT",
+      files: ["LICENSE", "README.md", "index.js", "cjs/"],
+      main: "index.js",
+      exports: {
+        ".": "./index.js",
+        "./package.json": "./package.json",
+      },
+    };
+  }
   if (sourcePackageJson.name === "react-dom") {
     return {
       name: sourcePackageJson.name,
@@ -63,13 +78,7 @@ function buildPublishPackageJson(sourcePackageJson) {
       keywords: sourcePackageJson.keywords,
       version: sourcePackageJson.version,
       license: sourcePackageJson.license || "MIT",
-      files: [
-        "LICENSE",
-        "README.md",
-        "index.js",
-        "client.js",
-        "cjs/",
-      ],
+      files: ["LICENSE", "README.md", "index.js", "client.js", "cjs/"],
       main: "index.js",
       exports: {
         ".": "./index.js",
@@ -112,7 +121,10 @@ function prepareNpmPackage(packageName) {
 
   // 对照官方：LICENSE/README 各包自己没有维护，统一从仓库根目录复制
   copyFileSync(path.join(rootDir, "LICENSE"), path.join(buildDir, "LICENSE"));
-  copyFileSync(path.join(rootDir, "README.md"), path.join(buildDir, "README.md"));
+  copyFileSync(
+    path.join(rootDir, "README.md"),
+    path.join(buildDir, "README.md"),
+  );
 
   const sourcePackageJson = JSON.parse(
     fs.readFileSync(path.join(packageDir, "package.json"), "utf-8"),
@@ -126,7 +138,9 @@ function prepareNpmPackage(packageName) {
   // npm/ 目录下手写的分发文件（index.js 等）+ rollup 构建产物（cjs/、umd/），原样铺到发布包根目录
   copyDirSync(path.join(packageDir, "npm"), buildDir);
 
-  console.log(`prepared npm package: ${packageName} -> ${path.relative(rootDir, buildDir)}`);
+  console.log(
+    `prepared npm package: ${packageName} -> ${path.relative(rootDir, buildDir)}`,
+  );
 }
 
 function prepareNpmPackages(packageNames) {

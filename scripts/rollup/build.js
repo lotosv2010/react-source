@@ -64,6 +64,24 @@ async function buildBundle(bundle, type) {
           return null;
         },
       },
+      // 对照官方 forks.js：scheduler 构建时把 SchedulerHostConfig 占位模块 fork 替换成
+      // 默认实现（MessageChannel + setTimeout fallback）。只对 scheduler bundle 生效，
+      // 其余包若引用 ./SchedulerHostConfig 会直通占位并抛错。
+      {
+        name: "scheduler-hostconfig-fork",
+        resolveId(source) {
+          if (
+            bundle.packageName === "scheduler" &&
+            source === "./SchedulerHostConfig"
+          ) {
+            return path.resolve(
+              process.cwd(),
+              "packages/scheduler/src/forks/SchedulerHostConfig.default.ts",
+            );
+          }
+          return null;
+        },
+      },
       resolve({ extensions: [".ts", ".tsx", ".js"] }),
       commonjs(),
       typescript({
@@ -77,7 +95,15 @@ async function buildBundle(bundle, type) {
           __DEV__: JSON.stringify(isDev),
         },
       }),
-      ...(isDev ? [] : [terser({ compress: { dead_code: true }, mangle: false, format: { comments: false } })]),
+      ...(isDev
+        ? []
+        : [
+            terser({
+              compress: { dead_code: true },
+              mangle: false,
+              format: { comments: false },
+            }),
+          ]),
     ],
   };
 
@@ -118,7 +144,9 @@ async function main() {
   // 对照官方 build.js 末尾调用 Packaging.prepareNpmPackages：
   // 所有 bundle 打包完成后，把各包的构建产物 + LICENSE/README + 发布用 package.json
   // 收集到 build/node_modules/<pkg>/，这里才是真正 npm publish 的包根。
-  const packageNames = [...new Set(bundles.map((bundle) => bundle.packageName))];
+  const packageNames = [
+    ...new Set(bundles.map((bundle) => bundle.packageName)),
+  ];
   prepareNpmPackages(packageNames);
 }
 

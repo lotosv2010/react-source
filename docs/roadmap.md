@@ -92,51 +92,43 @@
   - findCurrentHostFiber（深度优先找第一个真实 DOM 节点对应的 Fiber）
   - reflection 入口独立于主入口打包，供渲染器按需引入定位真实 DOM 节点（对照官方 reflection.js）
 
-**当前能做什么**：可以创建 ReactElement 对象，有一套完整（同步）的 reconciler 主链路——`createContainer/updateContainer` → `workLoopSync` → `commit mutation`，能对 Fiber 树做挂载、单/多节点 diff、更新、删除；并通过 react-dom 简版的 `createRoot().render()` 把结果渲染到真实 DOM（HostConfig 由构建时 fork 注入）。`fixtures/` 用 react-dom 驱动 reconciler 调试，`pnpm dev` 可看到挂载与二次更新的 DOM 变化。
-
-## 待实现
-
-> **Phase 2 / Phase 3 已完成**：`react-dom` 包（`createRoot(container).render(<App />)` 渲染到真实 DOM，简版）与 reconciler 主链路 + 更新与 Diff 算法均已落地，详见上文「已完成」区，故待实现项从 **Phase 4** 开始。后续 Phase 补齐 hydrate、legacy render、事件系统与 DOMPropertyOperations 完整体系。
-
----
+**当前能做什么**：可以创建 ReactElement 对象，有一套完整的 reconciler 主链路——`createContainer/updateContainer` → `workLoop` → `commit mutation`，能对 Fiber 树做挂载、单/多节点 diff、更新、删除；并通过 react-dom 简版的 `createRoot().render()` 把结果渲染到真实 DOM（HostConfig 由构建时 fork 注入）。`fixtures/` 用 react-dom 驱动 reconciler 调试，`pnpm dev` 可看到挂载与二次更新的 DOM 变化。
 
 ### Phase 4: 调度器（Scheduler）+ 时间切片 + 完整 Lane 模型
 
-**目标**：实现可中断的渲染，避免长时间占用主线程导致卡顿。当前只有 SyncLane + 同步 workLoop，需要补 scheduler 包和完整优先级体系。
+> 说明：引入可中断渲染，长渲染不再一次性占死主线程。scheduler 包按官方完整结构还原，reconciler 接入后普通 `createRoot().render()` 走 DefaultLane 并发路径（异步提交），`flushSync` 走 SyncLane 同步路径。
 
-#### 4.1 创建 scheduler 包
+- [x] **scheduler 包**（`packages/scheduler`，对照官方完整结构）
+  - `Scheduler.ts`：`unstable_scheduleCallback`/`unstable_cancelCallback`/`unstable_shouldYield`/`unstable_now` 等导出，taskQueue/timerQueue 双最小堆，expirationTime + timeout 表
+  - `SchedulerMinHeap.ts`（按 sortIndex 排序）、`SchedulerPriorities.ts`（5 档优先级）、`SchedulerFeatureFlags.ts`
+  - `SchedulerHostConfig.ts` 占位 + `forks/SchedulerHostConfig.default.ts`（MessageChannel 宏任务 + setTimeout fallback、`shouldYieldToHost` 5ms 时间片），构建时 fork 注入（rollup build.js / vite resolveId）
 
-- `packages/scheduler/src/forks/Scheduler.ts`
-  - scheduleCallback(priority, callback) → 注册回调任务
-  - 基于 MessageChannel（或 setTimeout fallback）实现宏任务调度
-  - 最小堆管理任务队列（按 expirationTime 排序）
-  - shouldYieldToHost() → 判断当前帧是否还有剩余时间（5ms 阈值）
+- [x] **完整 Lane 模型**（`ReactFiberLane.ts` + `ReactFiberRoot.ts`）
+  - 30 条 lane 位表逐位对齐官方（SyncLane 修正为 bit1、SyncHydrationLane=bit0，InputContinuous/Default/Transition×16/Retry×5/Idle/Offscreen…）
+  - getHighestPriorityLane/getNextLanes/markRootUpdated/markRootFinished/markStarvedLanesAsExpired/computeExpirationTime 等优先级与过期/饥饿计算
+  - FiberRootNode 补 eventTimes/expirationTimes/suspendedLanes/pingedLanes/expiredLanes/entangledLanes/entanglements
 
-#### 4.2 展开完整 Lane 模型
+- [x] **事件优先级**（`ReactEventPriorities.ts` + `react-reconciler/constants` 转出）
+  - Discrete/Continuous/Default/Idle 四档事件优先级、lanesToEventPriority、currentUpdatePriority 维护
 
-- 当前 `ReactFiberLane.ts` 只有 SyncLane，补齐：
-  - SyncLane / InputContinuousLane / DefaultLane / TransitionLane / IdleLane / OffscreenLane…
-  - getHighestPriorityLane / getNextLanes / markRootUpdated 等优先级计算
-  - lane 过期时间（expirationTime）与饥饿防饿死
+- [x] **reconciler 接入 Scheduler**（`ReactFiberWorkLoop.ts`）
+  - `scheduleUpdateOnFiber` → `markRootUpdated` + `ensureRootIsScheduled`（按 lane 选同步队列微任务 flush 或 `scheduleCallback` 分片）
+  - executionContext 补 `BatchedContext`；`flushSync`/`scheduleSyncCallback`/`flushSyncCallbacks` 同步队列
+  - `scheduleMicrotask` 走 HostConfig（react-dom 用 queueMicrotask/Promise 兜底）
 
-#### 4.3 reconciler 接入 Scheduler
+- [x] **workLoop 可中断化**
+  - `workLoopConcurrent`（每处理一个 Fiber 检查 `shouldYield`）、`renderRootConcurrent`、`performConcurrentWorkOnRoot`（含过期/阻塞 lane 走同步防饥饿）
+  - `prepareFreshStack` 中断恢复：同一 root+lanes 复用 workInProgressRoot 续跑
 
-- scheduleUpdateOnFiber 改造为 `ensureRootIsScheduled`
-  - 根据 lane 选择调度方式：同步更新（离散事件/flushSync）→ performSyncWorkOnRoot；并发更新 → Scheduler.scheduleCallback(performConcurrentWorkOnRoot)
-  - 补 executionContext 的 BatchedContext / EventContext（批处理与事件系统也依赖它）
+- [x] **并发更新下的状态计算**（`ReactFiberClassUpdateQueue.ts`）
+  - `processUpdateQueue` 按 renderLanes 跳过低优先级 update、记录 baseState/baseUpdate 重放链、`workInProgress.lanes = newLanes` 写回
+  - `markUpdateLaneFromFiberToRoot` 改为返回 FiberRootNode；`markSkippedUpdateLanes` 迁入 workLoop
 
-#### 4.4 workLoop 可中断化
+**阶段目标验收**：`fixtures/scheduler` 演示——原生任务 5ms 分片、5000 项大列表并发渲染不阻塞 rAF 帧、`flushSync` 同步更新抢占 DefaultLane 并发渲染。
 
-- `workLoopConcurrent` 每次处理一个 Fiber 后检查 `shouldYield()`
-  - 有剩余时间 → 继续；时间用完 → 中断保存进度（workInProgressRoot），yield 给浏览器
-  - 下一帧从中断点恢复（prepareFreshStack 的复用分支目前直接断言，需补齐）
+## 待实现
 
-#### 4.5 并发更新下的状态计算
-
-- processUpdateQueue 按 renderLanes 跳过/合并低优先级 update（当前是单 lane 无跳过分支）
-- baseState/baseUpdate 重放逻辑：高优先级打断后，被跳过的低优先级 update 记录到 base 队列，下次渲染重放（对应课程 041-042）
-
-**阶段目标验收**：DevTools Profiler 中观察到渲染任务被分片执行，不阻塞用户输入。
+> **Phase 2 / Phase 3 / Phase 4 已完成**：`react-dom` 包（`createRoot(container).render(<App />)` 渲染到真实 DOM，简版）、reconciler 主链路 + 更新与 Diff 算法、以及 Scheduler + 完整 Lane 模型 + 可中断 workLoop 均已落地，详见上文「已完成」区，故待实现项从 **Phase 5** 开始。后续 Phase 补齐 hydrate、legacy render、事件系统与 DOMPropertyOperations 完整体系。
 
 ---
 
@@ -164,16 +156,16 @@
   - 补 commitRoot 的 before-mutation / layout 子阶段（Passive effect 的调度入口）
 - **useRef**：mountRef 创建 { current: initialValue }
 - **useMemo / useCallback**：对比 deps，变化则重算，否则返回缓存值
-- **useTransition**：startTransition 把更新标记为 TransitionLane，返回 isPending（对应课程 043-044）
+- **useTransition**：startTransition 把更新标记为 TransitionLane，返回 isPending
 
 #### 5.4 调试方式（第三种）
 
-- hooks 调试：在 Dispatcher 切换 / Hook 链表构建处断点，观察 hook 状态变化（对应课程 019）
+- hooks 调试：在 Dispatcher 切换 / Hook 链表构建处断点，观察 hook 状态变化
 
 #### 5.5 noop-renderer（测试渲染器）
 
 - 新建 `react-noop-renderer` 包（官方 packages/react-noop-renderer 对应用来测 reconciler 的宿主）
-  - 实现一套不操作真实 DOM 的 HostConfig（内存树），配合 useEffect 等副作用做确定性测试（对应课程 035-037）
+  - 实现一套不操作真实 DOM 的 HostConfig（内存树），配合 useEffect 等副作用做确定性测试
 
 **阶段目标验收**：`useState` 管理状态并触发重渲染，`useEffect` 在 commit 后异步执行，且可通过 noop-renderer 单测断言副作用执行顺序。
 
@@ -220,7 +212,7 @@
 #### 7.2 context 变化时的传播与 bailout 兼容
 
 - Provider 的 value 变化时，标记子树中所有消费该 context 的 Fiber 需要更新
-- context 与 bailout 策略联动：无 context 消费时跳过子树渲染（基础 bailout 已实现，需补 dependencies 记录 context 依赖，对应课程 063）
+- context 与 bailout 策略联动：无 context 消费时跳过子树渲染（基础 bailout 已实现，需补 dependencies 记录 context 依赖）
 
 **阶段目标验收**：Provider 更新 value 后，消费该 context 的子组件自动重渲染。
 
@@ -245,7 +237,7 @@
 
 ### Phase 9: 其他核心 API + 性能优化
 
-#### 9.1 Suspense 完整实现（对应课程 049-055）
+#### 9.1 Suspense 完整实现
 
 - 捕获 Promise throw，显示 fallback，Promise resolve 后重新渲染
 - **unwind 流程**：渲染中断后的回退（completeUnitOfWork 的 Incomplete 分支当前留空，需补齐）
@@ -259,7 +251,7 @@
 - **lazy**：动态 import 组件，配合 Suspense 实现代码分割（需补 REACT_LAZY_TYPE）
 - **Portal**：createPortal 将子树渲染到其他 DOM 节点（需补 HostPortal 的 commit 空壳分支）
 
-#### 9.3 性能优化策略（对应课程 056-063）
+#### 9.3 性能优化策略
 
 - **eagerState**：dispatchSetState 时若 state 不变则提前 bailout，跳过整次调度（基础 bailout 已实现，eagerState 是 dispatch 侧优化）
 - **React.memo / useMemo / useCallback**：与 bailout 联动的 props 浅比较（见 9.2 / Phase 5.3）

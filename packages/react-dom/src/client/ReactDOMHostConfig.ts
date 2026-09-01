@@ -232,3 +232,14 @@ export function getHostContext(): object {
   // 本项目 host config 没有 context 栈（react-dom 落地 host context 时补），返回空对象
   return {};
 }
+
+// 对照官方 scheduleMicrotask：SyncLane 的同步任务由微任务统一 flush。queueMicrotask 在
+// ES2019 lib 里未声明，用 globalThis 兜底；老环境退回 Promise.resolve().then。
+export function scheduleMicrotask(callback: () => void): void {
+  const queueMicrotask = (globalThis as any).queueMicrotask;
+  if (typeof queueMicrotask === "function") {
+    queueMicrotask(callback);
+  } else {
+    Promise.resolve().then(callback);
+  }
+}

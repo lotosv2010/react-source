@@ -1,21 +1,22 @@
 {
-  "name": "react-reconciler",
-  "description": "React package for creating custom renderers.",
+  "name": "scheduler",
+  "description": "Cooperative scheduler for the browser environment.",
   "version": "1.0.0",
   "keywords": [
     "react"
   ],
+  "main": "npm/index.js",
+  "exports": {
+    ".": "./npm/index.js",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/"
-  },
-  "dependencies": {
-    "scheduler": "workspace:*",
-    "shared": "workspace:*"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/lotosv2010/react-source.git",
-    "directory": "packages/react-reconciler"
+    "directory": "packages/scheduler"
   },
   "engines": {
     "node": ">=20.0.0"

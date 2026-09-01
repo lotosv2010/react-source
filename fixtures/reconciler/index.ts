@@ -1,6 +1,7 @@
 import "./index.css";
 import { Fragment, jsx } from "react/jsx-runtime";
 import { createRoot } from "react-dom/client";
+import { flushSync } from "react-reconciler/src/ReactFiberWorkLoop";
 
 // 用 react-dom 的 createRoot 驱动 reconciler 的同步主链路（mount → update → diff → commit）
 // 渲染到真实 DOM。HostConfig 由构建时 fork 注入（vite alias 把 ReactFiberHostConfig
@@ -48,13 +49,15 @@ function runReconcilerDemo(): void {
     root.render(jsx(App, { stage: nextStage }));
   };
 
-  render(stage);
+  // Phase 4 并发化后 render 是异步提交（DefaultLane 并发），用 flushSync 让同步路径
+  // 立即提交，便于紧随其后的 innerHTML 断言读到已提交的 DOM。
+  flushSync(() => render(stage));
   console.log("mount 完成：", rootElement.innerHTML);
 
   // 第二次更新：b 删除、a/c 顺序调整、className 与文本更新
   setTimeout(() => {
     stage = 2;
-    render(stage);
+    flushSync(() => render(stage));
     console.log("update 完成：", rootElement.innerHTML);
   }, 1000);
 }

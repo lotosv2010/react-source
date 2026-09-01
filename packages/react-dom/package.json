@@ -17,6 +17,7 @@
   "dependencies": {
     "react": "workspace:*",
     "react-reconciler": "workspace:*",
+    "scheduler": "workspace:*",
     "shared": "workspace:*"
   },
   "repository": {

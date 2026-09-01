@@ -35,6 +35,29 @@ export default defineConfig({
         return null;
       },
     },
+    // scheduler 内部对 HostConfig 用相对导入 ./SchedulerHostConfig（与 reconciler 的
+    // ReactFiberHostConfig 同理），vite alias 只对裸导入生效，故用 resolveId 插件拦截，
+    // 重定向到默认实现（MessageChannel + setTimeout fallback）。
+    {
+      name: "scheduler-hostconfig-fork",
+      enforce: "pre",
+      resolveId(source, importer) {
+        const schedulerSrcDir = path
+          .resolve(rootDir, "packages/scheduler/src")
+          .replace(/\\/g, "/");
+        if (
+          source === "./SchedulerHostConfig" &&
+          importer &&
+          importer.replace(/\\/g, "/").startsWith(schedulerSrcDir + "/")
+        ) {
+          return path.resolve(
+            rootDir,
+            "packages/scheduler/src/forks/SchedulerHostConfig.default.ts",
+          );
+        }
+        return null;
+      },
+    },
     react(),
     {
       name: "reset-optimize-deps",
@@ -100,7 +123,10 @@ export default defineConfig({
       // reconciler 内部子路径（react-dom 用 react-reconciler/src/... 风格引用），映射到 ts 源码
       {
         find: /^react-reconciler\/src\/(.*)$/,
-        replacement: path.resolve(rootDir, "packages/react-reconciler/src/$1.ts"),
+        replacement: path.resolve(
+          rootDir,
+          "packages/react-reconciler/src/$1.ts",
+        ),
       },
       {
         find: /^react-reconciler$/,
@@ -117,6 +143,15 @@ export default defineConfig({
       {
         find: /^react-dom$/,
         replacement: path.resolve(rootDir, "packages/react-dom/index.ts"),
+      },
+      // scheduler 子路径（reconciler 用 scheduler/src/... 风格引用），映射到 ts 源码
+      {
+        find: /^scheduler\/src\/(.*)$/,
+        replacement: path.resolve(rootDir, "packages/scheduler/src/$1.ts"),
+      },
+      {
+        find: /^scheduler$/,
+        replacement: path.resolve(rootDir, "packages/scheduler/index.ts"),
       },
     ],
   },

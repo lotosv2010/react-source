@@ -151,3 +151,7 @@ export function getRootHostContainer(): Container {
 export function getHostContext(): any {
   throwIncompatibleHost();
 }
+
+export function scheduleMicrotask(_callback: () => void): void {
+  throwIncompatibleHost();
+}

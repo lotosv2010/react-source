@@ -19,7 +19,7 @@ const moduleTypes = {
 // 对照官方 scripts/rollup/bundles.js：每新增一个可独立发布的包（react、react-dom、scheduler ...），
 // 在这里补一条 bundle 描述，build.js 会据此批量打包。
 // 当前 packages/shared 只被其他包内部引用，不单独产出 bundle，故不在此列出。
-const bundles = [ 
+const bundles = [
   {
     moduleType: moduleTypes.ISOMORPHIC,
     packageName: "react",
@@ -45,7 +45,7 @@ const bundles = [
     externals: [],
     bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
   },
-   /******* React JSX DEV Runtime *******/
+  /******* React JSX DEV Runtime *******/
   {
     moduleType: moduleTypes.ISOMORPHIC,
     packageName: "react",
@@ -54,16 +54,16 @@ const bundles = [
     externals: [],
     bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
   },
-   /******* React Reconciler *******/
+  /******* React Reconciler *******/
   {
     moduleType: moduleTypes.RECONCILER,
     packageName: "react-reconciler",
     name: "react-reconciler",
     entry: "packages/react-reconciler/index.ts",
-    externals: ["react"],
+    externals: ["react", "scheduler"],
     bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
   },
-   /******* Reconciler Reflection *******/
+  /******* Reconciler Reflection *******/
   {
     moduleType: moduleTypes.RECONCILER,
     packageName: "react-reconciler",
@@ -81,14 +81,23 @@ const bundles = [
     externals: ["react"],
     bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
   },
+  /******* Scheduler *******/
+  {
+    moduleType: moduleTypes.SCHEDULER,
+    packageName: "scheduler",
+    name: "scheduler",
+    entry: "packages/scheduler/index.ts",
+    externals: [],
+    bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
+  },
   /******* React DOM *******/
   {
     moduleType: moduleTypes.RENDERER,
     packageName: "react-dom",
     name: "react-dom",
     entry: "packages/react-dom/index.ts",
-    // 对照官方：react-dom 只把 react 作为 external，reconciler/shared 都 inline 进产物
-    externals: ["react"],
+    // 对照官方：react-dom 只把 react/scheduler 作为 external，reconciler/shared 都 inline 进产物
+    externals: ["react", "scheduler"],
     // 简版先只产 cjs（NODE_DEV/NODE_PROD），UMD 产物后续补
     bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
   },

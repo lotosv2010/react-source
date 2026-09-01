@@ -92,15 +92,23 @@ importers:
       react-reconciler:
         specifier: workspace:*
         version: link:../react-reconciler
+      scheduler:
+        specifier: workspace:*
+        version: link:../scheduler
       shared:
         specifier: workspace:*
         version: link:../shared
 
   packages/react-reconciler:
     dependencies:
+      scheduler:
+        specifier: workspace:*
+        version: link:../scheduler
       shared:
         specifier: workspace:*
         version: link:../shared
+
+  packages/scheduler: {}
 
   packages/shared: {}
 

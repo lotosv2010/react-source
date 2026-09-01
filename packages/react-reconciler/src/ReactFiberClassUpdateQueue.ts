@@ -3,8 +3,19 @@
  * @description 挂载在 fiber.updateQueue 上的单向循环链表，保存组件/根节点收到的 update
  */
 
-import { NoLanes, mergeLanes, type Lane, type Lanes } from "./ReactFiberLane";
+import {
+  NoLane,
+  NoLanes,
+  isSubsetOfLanes,
+  mergeLanes,
+  type Lane,
+  type Lanes,
+} from "./ReactFiberLane";
+import { Callback } from "./ReactFiberFlags";
 import type { FiberNode } from "./ReactFiber";
+import type { FiberRootNode } from "./ReactFiberRoot";
+import { HostRoot } from "./ReactWorkTags";
+import { markSkippedUpdateLanes } from "./ReactFiberWorkLoop";
 
 // 对照官方 packages/react-reconciler/src/ReactFiberClassUpdateQueue.new.js：Update 对象是
 // 不可变的纯数据（payload 携带新 state/新 element），shared.pending 是循环链表（last 指向
@@ -116,7 +127,7 @@ export function enqueueUpdate<State>(
   fiber: FiberNode,
   update: Update<State>,
   lane: Lane,
-): FiberNode | null {
+): FiberRootNode | null {
   const updateQueue = fiber.updateQueue;
   if (updateQueue === null) {
     // fiber 已被卸载
@@ -140,12 +151,12 @@ export function enqueueUpdate<State>(
 
 // 对照官方 markUpdateLaneFromFiberToRoot：把 lane 标记到发起更新的 fiber 及其 alternate，
 // 再沿 return 路径把 lane 合并到每个祖先的 childLanes（beginWork 的 bailout 判断靠 childLanes
-// 决定是否继续向下）。单 lane 模型下这条路径唯一的作用是让 root fiber 的 lanes 非空，
-// 从而 updateHostRoot 不会被 attemptEarlyBailout 提前跳过。
+// 决定是否继续向下）。走到根时返回 FiberRootNode（通过 HostRoot fiber 的 stateNode 取到），
+// 供 scheduleUpdateOnFiber 使用。
 function markUpdateLaneFromFiberToRoot(
   sourceFiber: FiberNode,
   lane: Lane,
-): FiberNode | null {
+): FiberRootNode | null {
   // 更新源 fiber 自己的 lanes
   sourceFiber.lanes = mergeLanes(sourceFiber.lanes, lane);
   let alternate = sourceFiber.alternate;
@@ -167,8 +178,11 @@ function markUpdateLaneFromFiberToRoot(
     parent = parent.return;
   }
 
-  // node 现在是 HostRoot fiber
-  return node;
+  if (node.tag === HostRoot) {
+    // node 现在是 HostRoot fiber，stateNode 指向 FiberRootNode
+    return node.stateNode;
+  }
+  return null;
 }
 
 // 单 lane 模型下 update 不会因优先级不足被跳过（只有 SyncLane 一条 lane），
@@ -212,9 +226,9 @@ function getStateFromUpdate<State>(
   return prevState;
 }
 
-// 对照官方 processUpdateQueue：把 pending 循环链表解环、追加到 base 队列，然后逐条处理
-// 出新的 memoizedState。官方会按 renderLanes 跳过低优先级 update（并记录 baseState/baseUpdate
-// 供后续重放），单 lane 模型下没有跳过分支，但保留解环/拼队列/循环消费的结构。
+// 对照官方 processUpdateQueue：把 pending 循环链表解环、追加到 base 队列，然后按 renderLanes
+// 逐条处理。优先级不足的 update 被跳过并记录进新的 base 队列（baseState 停在第一条被跳过的
+// update 之前），下次高优先级渲染完成后会以这些 lane 重放，保证 update 不丢失。
 /**
  * 处理 fiber 的更新队列，计算新的 memoizedState
  * @param workInProgress - 正在处理的 fiber
@@ -226,7 +240,7 @@ export function processUpdateQueue<State>(
   workInProgress: FiberNode,
   props: any,
   instance: any,
-  _renderLanes: Lanes,
+  renderLanes: Lanes,
 ): void {
   const queue: UpdateQueue<State> = workInProgress.updateQueue;
 
@@ -249,16 +263,89 @@ export function processUpdateQueue<State>(
       lastBaseUpdate.next = firstPendingUpdate;
     }
     lastBaseUpdate = lastPendingUpdate;
+
+    // 同步到 current 队列：base 队列是普通单向链表，追加到两条链上可共享结构
+    const current = workInProgress.alternate;
+    if (current !== null) {
+      const currentQueue: UpdateQueue<State> = current.updateQueue;
+      const currentLastBaseUpdate = currentQueue.lastBaseUpdate;
+      if (currentLastBaseUpdate !== lastBaseUpdate) {
+        if (currentLastBaseUpdate === null) {
+          currentQueue.firstBaseUpdate = firstPendingUpdate;
+        } else {
+          currentLastBaseUpdate.next = firstPendingUpdate;
+        }
+        currentQueue.lastBaseUpdate = lastPendingUpdate;
+      }
+    }
   }
 
   if (firstBaseUpdate !== null) {
     let newState = queue.baseState;
+    let newLanes: Lanes = NoLanes;
+
+    let newBaseState: State | null = null;
+    let newFirstBaseUpdate: Update<State> | null = null;
+    let newLastBaseUpdate: Update<State> | null = null;
 
     let update: Update<State> | null = firstBaseUpdate;
     do {
       const currentUpdate: Update<State> = update as Update<State>;
-      // 单 lane 模型：所有 update 都能被处理，不保留跳过分支
-      newState = getStateFromUpdate(currentUpdate, newState, props, instance);
+      const updateLane = currentUpdate.lane;
+
+      if (!isSubsetOfLanes(renderLanes, updateLane)) {
+        // 优先级不足：跳过。第一条被跳过的 update 之前的 state 就是新的 baseState，
+        // 被跳过的 update 依次克隆进新的 base 队列，留待后续高优先级渲染完成后重放。
+        const clone: Update<State> = {
+          eventTime: currentUpdate.eventTime,
+          lane: updateLane,
+
+          tag: currentUpdate.tag,
+          payload: currentUpdate.payload,
+          callback: currentUpdate.callback,
+
+          next: null,
+        };
+        if (newLastBaseUpdate === null) {
+          newFirstBaseUpdate = clone;
+          newLastBaseUpdate = clone;
+          newBaseState = newState;
+        } else {
+          newLastBaseUpdate.next = clone;
+          newLastBaseUpdate = clone;
+        }
+        // 累积被跳过的 lane，交给 markSkippedUpdateLanes 记录
+        newLanes = mergeLanes(newLanes, updateLane);
+      } else {
+        // 优先级足够，处理该 update。若之前已经跳过过 update，本条也要克隆进 base 队列
+        // （lane 置 NoLane，重放时它恒被消费），保证 base 队列重放后的结果顺序正确。
+        if (newLastBaseUpdate !== null) {
+          const clone: Update<State> = {
+            eventTime: currentUpdate.eventTime,
+            lane: NoLane,
+
+            tag: currentUpdate.tag,
+            payload: currentUpdate.payload,
+            callback: currentUpdate.callback,
+
+            next: null,
+          };
+          newLastBaseUpdate.next = clone;
+          newLastBaseUpdate = clone;
+        }
+
+        newState = getStateFromUpdate(currentUpdate, newState, props, instance);
+        const callback = currentUpdate.callback;
+        if (callback !== null && currentUpdate.lane !== NoLane) {
+          workInProgress.flags |= Callback;
+          const effects = queue.effects;
+          if (effects === null) {
+            queue.effects = [currentUpdate];
+          } else {
+            effects.push(currentUpdate);
+          }
+        }
+      }
 
       update = currentUpdate.next;
       if (update === null) {
@@ -277,18 +364,20 @@ export function processUpdateQueue<State>(
       }
     } while (true);
 
-    // 单 lane 模型所有 update 都会被消费，base 队列清空
-    queue.baseState = newState;
-    queue.firstBaseUpdate = null;
-    queue.lastBaseUpdate = null;
+    if (newLastBaseUpdate === null) {
+      // 没有跳过的 update，baseState 直接等于最终 state
+      newBaseState = newState;
+    }
 
+    queue.baseState = newBaseState as State;
+    queue.firstBaseUpdate = newFirstBaseUpdate;
+    queue.lastBaseUpdate = newLastBaseUpdate;
+
+    // 把被跳过的 lane 写回 workInProgress.lanes，供下次渲染据此调度
+    markSkippedUpdateLanes(newLanes);
+    workInProgress.lanes = newLanes;
     workInProgress.memoizedState = newState;
   }
-}
-
-// 以下两个导出与官方签名保持一致，供 workLoop 调用；单 lane 模型下 used 参数不影响结果
-export function markSkippedUpdateLanes(_lane: Lane | Lanes): void {
-  // 单 lane 模型无跳过的 lane，no-op
 }
 
 export function resetHasForceUpdateBeforeProcessing(): void {

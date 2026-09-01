@@ -5,5 +5,11 @@
 
 // 对照官方 packages/react-reconciler/src/ReactReconcilerConstants.js：
 // 只暴露第三方渲染器实现 host config 所必需的最小常量集合。
-// 官方还转出 DiscreteEventPriority 等事件优先级，那些等到 Phase 4 接入 Scheduler 时再补。
+// 官方这里转出事件优先级常量供渲染器在事件派发时设置 currentUpdatePriority。
 export { LegacyRoot, ConcurrentRoot } from "./ReactRootTags";
+export {
+  DiscreteEventPriority,
+  ContinuousEventPriority,
+  DefaultEventPriority,
+  IdleEventPriority,
+} from "./ReactEventPriorities";

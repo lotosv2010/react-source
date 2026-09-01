@@ -55,7 +55,7 @@ export function updateContainer(
 
   const root = enqueueUpdate(current, update, lane);
   if (root !== null) {
-    scheduleUpdateOnFiber(container, current, lane);
+    scheduleUpdateOnFiber(root, current, lane, eventTime);
   }
 
   return lane;

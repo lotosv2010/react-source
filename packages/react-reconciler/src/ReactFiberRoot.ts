@@ -5,14 +5,21 @@
 
 import type { FiberNode } from "./ReactFiber";
 import { createHostRootFiber } from "./ReactFiber";
-import { NoLane, NoLanes, type Lane, type Lanes } from "./ReactFiberLane";
+import {
+  NoLane,
+  NoLanes,
+  NoTimestamp,
+  TotalLanes,
+  type Lane,
+  type Lanes,
+} from "./ReactFiberLane";
 import type { RootTag } from "./ReactRootTags";
 import { initializeUpdateQueue } from "./ReactFiberClassUpdateQueue";
 
 // 对照官方 packages/react-reconciler/src/ReactFiberRoot.new.js：官方 FiberRootNode 还带
 // 大量优先级/调度字段（eventTimes、expirationTimes、entangledLanes 等），这些服务于
-// Scheduler 时间切片与 lane 抢占。Phase 2/3 只有同步渲染，先只保留主链路用得到的字段，
-// Phase 4 接入 Scheduler 时再补。
+// Scheduler 时间切片与 lane 抢占。Phase 4 已接入 Scheduler，故补齐 lane 过期/纠缠所需的字段；
+// mutableReadLanes / hiddenUpdates / pendingChildren 等仍留待后续（Suspense/Offscreen）。
 
 // HostRoot fiber 的 memoizedState 是一个 { element } 对象，updateHostRoot 从里面取本次要
 // 渲染的 ReactElement（updateContainer 时作为 update.payload 写入）。
@@ -31,6 +38,16 @@ export class FiberRootNode {
   callbackPriority: Lane;
   context: any;
   pendingContext: any;
+  // 每条 lane 的事件发生时间（index = laneToIndex），用于饥饿检测
+  eventTimes: number[];
+  // 每条 lane 的过期时间（index = laneToIndex），markStarvedLanesAsExpired 据此判断是否过期
+  expirationTimes: number[];
+  suspendedLanes: Lanes;
+  pingedLanes: Lanes;
+  expiredLanes: Lanes;
+  entangledLanes: Lanes;
+  // 每条 lane 与之纠缠的 lanes 集合（index = laneToIndex）
+  entanglements: Lanes[];
 
   constructor(containerInfo: any, tag: RootTag) {
     this.tag = tag;
@@ -43,7 +60,19 @@ export class FiberRootNode {
     this.callbackPriority = NoLane;
     this.context = null;
     this.pendingContext = null;
+    this.eventTimes = createLaneMap(NoTimestamp);
+    this.expirationTimes = createLaneMap(NoTimestamp);
+    this.suspendedLanes = NoLanes;
+    this.pingedLanes = NoLanes;
+    this.expiredLanes = NoLanes;
+    this.entangledLanes = NoLanes;
+    this.entanglements = createLaneMap(NoLanes);
   }
+}
+
+// 官方 createLaneMap：建一个长度 TotalLanes 的数组并填充初始值（对应 laneToIndex 的索引空间）
+function createLaneMap<T>(initialValue: T): T[] {
+  return new Array(TotalLanes).fill(initialValue);
 }
 
 /**
