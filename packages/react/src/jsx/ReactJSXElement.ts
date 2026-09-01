@@ -211,7 +211,7 @@ const ReactElement = function (
       configurable: false,
       enumerable: false,
       writable: false,
-      value: "react-source-project",
+      value: "g-react-source",
     });
     if (Object.freeze) {
       Object.freeze(element.props);
@@ -219,7 +219,7 @@ const ReactElement = function (
     }
   } else {
     // prod 模式下也添加标识，但作为普通属性
-    element.__react_source = "react-source-project";
+    element.__react_source = "g-react-source";
   }
 
   return element;

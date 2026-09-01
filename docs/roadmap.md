@@ -18,7 +18,7 @@
     - **经典入口**（react）：`createElement`
     - **automatic runtime 入口**（react/jsx-runtime、react/jsx-dev-runtime）：`jsx/jsxs/jsxDEV`
   - DEV 模式警告（字符串 ref 警告、key/ref 作为 prop 访问警告）
-  - 标识注入（`__react_source: "react-source-project"`，方便控制台区分）
+  - 标识注入（`__react_source: "g-react-source"`，方便控制台区分）
   - Rollup 构建产出 cjs/esm（dev+prod）和 iife 格式 bundle
 
 **当前能做什么**：可以调用 `createElement(<div />)` 或 `jsx(<div />)` 得到 ReactElement 对象，但无法渲染到 DOM（缺 react-dom）。
