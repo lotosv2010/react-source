@@ -1,0 +1,7 @@
+.demo {
+  color: #333;
+}
+
+.demo.updated {
+  color: #d0021b;
+}

@@ -63,6 +63,22 @@ export default defineConfig({
         find: /^shared\/(.*)$/,
         replacement: path.resolve(rootDir, "packages/shared/$1.ts"),
       },
+      // react-reconciler 的常量入口（LegacyRoot/ConcurrentRoot）与主入口分开，
+      // 与 react/jsx-runtime 一样需要精确匹配子路径，避免被主入口正则吞掉
+      {
+        find: /^react-reconciler\/constants$/,
+        replacement: path.resolve(
+          rootDir,
+          "packages/react-reconciler/constants.ts",
+        ),
+      },
+      {
+        find: /^react-reconciler$/,
+        replacement: path.resolve(
+          rootDir,
+          "packages/react-reconciler/index.ts",
+        ),
+      },
     ],
   },
 });

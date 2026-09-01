@@ -19,7 +19,8 @@
       "react/jsx-dev-runtime": ["./packages/react/src/jsx-dev-runtime.ts"],
       "react/jsx-runtime": ["./packages/react/src/jsx-runtime.ts"],
       "react": ["./packages/react/src/index.ts"],
-      "react-reconciler": ["./packages/react-reconciler/index.ts"]
+      "react-reconciler": ["./packages/react-reconciler/index.ts"],
+      "react-reconciler/constants": ["./packages/react-reconciler/constants.ts"]
     }
   },
   "exclude": ["node_modules", "dist", "build"]
