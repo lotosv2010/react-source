@@ -80,7 +80,7 @@ FiberNode {
 
 两棵树通过 `alternate` 指针互相引用，构建完成后直接替换根指针（`current = workInProgress`），而不是逐节点替换 DOM，这样即使渲染中途出错也不会影响已显示的内容。
 
-对应本项目待搭建的 `packages/react-reconciler/src/ReactFiber.ts`。
+对应本项目 `packages/react-reconciler/src/ReactFiber.ts`（已实现）。
 
 ### 3. render 阶段 vs commit 阶段
 
@@ -131,9 +131,22 @@ Hooks 不是魔法，本质是：
 
 ## 本项目当前进度
 
-对照 [roadmap.md](./roadmap.md)，当前已实现最上层（JSX → ReactElement），即架构图中 "React 核心 API" 这一层的一部分。下一步是搭建 react-reconciler 的 Fiber 数据结构和最小化的 beginWork/completeWork/commit 流程，让 ReactElement 能第一次真正显示到页面上。
+对照 [roadmap.md](./roadmap.md)，当前已实现：
+
+- **最上层（JSX → ReactElement）**：`packages/react` 的 createElement/jsx/jsxDEV + jsx-runtime/jsx-dev-runtime 入口，架构图中 "React 核心 API" 这一层已完成。
+- **reconciler 主链路（同步路径）**：`packages/react-reconciler` 已具备 Fiber 数据结构、双缓存、更新队列、beginWork/completeWork、commit mutation、单/多节点 diff、Fragment、单 lane 模型，以及 `setHostConfig` 运行时注入的 HostConfig 接口。
+
+尚未落地（也是下一步方向）：
+
+- **渲染器层**：`react-dom` 尚未创建，HostConfig 没有真实 DOM 实现注入，因此还无法把 Fiber 变更落地到浏览器 DOM。
+- **调度器层**：`scheduler` 尚未创建，workLoop 目前是同步一口气跑完（单 SyncLane），还没有时间切片 / 完整 Lane 模型 / 优先级抢占。
+- **Hooks 层**：`ReactFiberHooks` 尚未创建，函数组件的 renderWithHooks 是占位实现（直接调用 Component），还没有 useState/useEffect 等。
+
+即：架构图中"协调器"这一层的主链路已经打通，但"渲染器"和"调度器"两层还是空的，"协调器"与它们对接的部分（ensureRootIsScheduled、可中断 workLoop、并发更新状态计算）也随之后续补齐。详细分 Phase 进度见 [roadmap.md](./roadmap.md)。
 
 ## 参考资料
 
 - React 官方仓库：https://github.com/facebook/react
 - Fiber 架构设计文档（React 团队）：https://github.com/acdlite/react-fiber-architecture
+- Big-React（卡颂）：https://github.com/BetaSu/big-react
+- React技术揭秘（卡颂）：https://react.iamkasong.com/

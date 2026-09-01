@@ -23,7 +23,7 @@ react-source/
 │   │   ├── globals.d.ts                # 全局类型声明（__DEV__ 等构建时常量）
 │   │   ├── hasOwnProperty.ts           # Object.prototype.hasOwnProperty 安全引用
 │   │   ├── objectIs.ts                 # Object.is polyfill（兼容旧环境）
-│   │   ├── ReactSymbols.ts             # React 内部 Symbol 常量（ELEMENT_TYPE 等）
+│   │   ├── ReactSymbols.ts             # React 内部 Symbol 常量（ELEMENT/FRAGMENT/PORTAL/PROVIDER/CONTEXT/FORWARD_REF/SUSPENSE/MEMO/LAZY 等）
 │   │   └── ReactTypes.ts               # React 核心类型定义（Key/Ref/Props/ElementType）
 │   │
 │   ├── react/                 # React 核心 API（createElement、hooks 入口等）
@@ -38,17 +38,45 @@ react-source/
 │   │       ├── ReactElement.ts         # ReactElement 工厂和经典 createElement 实现
 │   │       └── ReactSharedInternals.ts # React 内部共享状态（聚合 CurrentOwner 等）
 │   │
-│   ├── react-reconciler/      # 协调器（Fiber、diff、commit）（待搭建）
+│   ├── react-reconciler/      # 协调器（Fiber、diff、commit）（同步主链路已搭建）
+│   │   ├── index.ts                    # 主入口（转出 createContainer/updateContainer 等）
+│   │   ├── constants.ts                # 常量入口（转出 LegacyRoot/ConcurrentRoot）
+│   │   ├── reflection.ts               # Fiber 树反射入口（findCurrentHostFiber 等）
+│   │   └── src/
+│   │       ├── ReactFiber.ts           # Fiber 节点数据结构 + 双缓存 createWorkInProgress
+│   │       ├── ReactChildFiber.ts      # ChildFiber 协调器（单/多节点 diff）
+│   │       ├── ReactFiberBeginWork.ts  # beginWork（递阶段，按 tag 分发）
+│   │       ├── ReactFiberCompleteWork.ts # completeWork（归阶段，创建 DOM + bubbleProperties）
+│   │       ├── ReactFiberCommitWork.ts # commit mutation（插入/更新/删除）
+│   │       ├── ReactFiberWorkLoop.ts   # 调度入口 + workLoop + commit 总控（同步）
+│   │       ├── ReactFiberClassUpdateQueue.ts # 更新队列（Update 循环链表）
+│   │       ├── ReactFiberHostConfig.ts # HostConfig 接口（setHostConfig 运行时注入）
+│   │       ├── ReactFiberLane.ts       # Lane 优先级模型（当前仅 SyncLane）
+│   │       ├── ReactFiberRoot.ts       # FiberRootNode / createFiberRoot
+│   │       ├── ReactFiberFlags.ts      # 副作用标记位掩码
+│   │       ├── ReactFiberReconciler.ts # 对外入口（createContainer/updateContainer）
+│   │       └── ...                     # WorkTags/RootTags/TypeOfMode 等常量
+│   │
 │   ├── react-dom/             # DOM 渲染器（待搭建）
 │   └── scheduler/             # 调度器（时间切片、优先级）（待搭建）
 │
 ├── scripts/                   # 构建脚本
-│   └── rollup/
-│       └── build.js           # Rollup 打包入口
+│   ├── rollup/
+│   │   ├── build.js           # Rollup 打包入口
+│   │   ├── bundles.js         # bundle 描述（react/reconciler 等包的打包配置）
+│   │   └── packaging.js       # 打包辅助
+│   └── vite/
+│       └── vite.config.mts    # fixtures 源码调试配置（alias 到 packages 源码）
+│
+├── fixtures/                  # 源码调试演示页（pnpm dev）
+│   ├── main.tsx               # 入口（当前仅 console.log 验证 JSX）
+│   ├── index.html
+│   └── jsx/
+│       └── index.tsx          # JSX Demo 组件
 │
 ├── .husky/                    # Git hooks（pre-commit、commit-msg）
 ├── eslint.config.js           # ESLint 配置
-├── prettier.config.js         # Prettier 配置
+├── .prettierrc.js             # Prettier 配置
 ├── tsconfig.json              # TypeScript 配置
 ├── turbo.json                 # Turbo 任务编排配置
 └── pnpm-workspace.yaml        # pnpm workspace 配置
@@ -63,7 +91,7 @@ React 元素的核心工厂函数，包含 `createElement`（经典运行时入�
 babel automatic runtime 实际使用的 JSX 工厂实现，通过 `ReactSharedInternals` 获取 owner 以支持跨包单例共享。
 
 **packages/shared/ReactSymbols.ts**  
-使用 `Symbol.for` 定义 React 内部标识符（如 `REACT_ELEMENT_TYPE`），保证多份 React 实例间能互认。
+使用 `Symbol.for` 定义 React 内部标识符（`REACT_ELEMENT_TYPE`、`REACT_FRAGMENT_TYPE`、`REACT_PORTAL_TYPE`、`REACT_CONTEXT_TYPE`、`REACT_SUSPENSE_TYPE`、`REACT_MEMO_TYPE`、`REACT_LAZY_TYPE` 等，按后续 Phase 用得到的子集逐步补充），保证多份 React 实例间能互认。
 
 **packages/shared/globals.d.ts**  
 声明构建时注入的全局常量（`__DEV__`），实际值由 Rollup 的 `@rollup/plugin-replace` 在打包时替换。

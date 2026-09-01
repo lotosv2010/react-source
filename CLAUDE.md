@@ -17,7 +17,7 @@
   - `packages/scheduler` — 调度器（时间切片、优先级）
   - `packages/shared` — 跨包共享的工具函数、常量、类型
 
-> 当前仓库刚初始化，尚未创建以上目录，后续按开发进度逐个搭建，不提前铺摊子。
+> `react-dom` / `scheduler` 尚未创建；`react` / `shared` / `react-reconciler` 已搭建，后续按开发进度逐个补齐，不提前铺摊子。
 
 ## 开发约定
 
@@ -30,12 +30,13 @@
 
 ## 当前状态
 
-monorepo 骨架已搭建：
+monorepo 骨架与 reconciler 主链路已搭建：
 
 - 根目录：`package.json`、`pnpm-workspace.yaml`、`tsconfig.json`、`eslint.config.js`、`turbo.json`
-- 工具链：ESLint + Prettier（lint/格式化）、Husky + lint-staged + commitlint（提交检查）、Rollup（构建）
-- `packages/shared` 已建包占位（跨包共享工具/常量/类型，目前有 `objectIs`）
-- `packages/react` 已建包，产出 `index.ts` 入口，构建脚本可产出 cjs/esm（dev+prod）和 iife 三种格式的 bundle
-- 常用命令：`pnpm lint` / `pnpm lint:fix`、`pnpm format` / `pnpm format:check`、`pnpm build`、`npx tsc --noEmit`
+- 工具链：ESLint + Prettier（lint/格式化）、Husky + lint-staged + commitlint（提交检查）、Rollup（构建）、Vite（fixtures 源码调试）
+- `packages/shared`：跨包共享工具/常量/类型（objectIs、hasOwnProperty、ReactSymbols、ReactTypes 等）
+- `packages/react`：JSX 运行时（createElement/jsx/jsxDEV + jsx-runtime/jsx-dev-runtime 入口），构建产出 cjs/esm（dev+prod）和 iife 三种格式
+- `packages/react-reconciler`：Fiber 主链路（同步路径）——Fiber 数据结构、更新队列、beginWork/completeWork、commit mutation、单/多节点 diff、Fragment、单 lane 模型、HostConfig 接口（`setHostConfig` 运行时注入）
+- 常用命令：`pnpm dev`（fixtures 调试）、`pnpm lint` / `pnpm lint:fix`、`pnpm format` / `pnpm format:check`、`pnpm build`、`npx tsc --noEmit`
 
-`react-dom` / `react-reconciler` / `scheduler` 等包尚未创建，按渲染链路推进顺序逐个搭建。
+`react-dom` / `scheduler` 尚未创建（reconciler 的 HostConfig 尚未有真实渲染器实现注入，还渲染不到真实 DOM），按渲染链路推进顺序逐个搭建。详细进度见 [docs/roadmap.md](./docs/roadmap.md)。

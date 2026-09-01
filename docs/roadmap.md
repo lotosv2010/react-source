@@ -4,7 +4,7 @@
 
 ## 已完成
 
-### Phase 1: JSX / createElement（当前）
+### Phase 1: JSX / createElement
 
 - [x] **packages/shared** 基础设施
   - ReactTypes（Key/Ref/Props/ElementType 类型定义）
@@ -21,63 +21,92 @@
   - 标识注入（`__react_source: "g-react-source"`，方便控制台区分）
   - Rollup 构建产出 cjs/esm（dev+prod）和 iife 格式 bundle
 
-**当前能做什么**：可以调用 `createElement(<div />)` 或 `jsx(<div />)` 得到 ReactElement 对象，但无法渲染到 DOM（缺 react-dom）。
+### Phase 2/3（部分）: Reconciler 主链路 + 更新与 Diff
+
+> 说明：reconciler 的骨架和主链路已经落地，走的是「同步渲染」路径（单 lane）。react-dom 渲染器本身尚未搭建（见 Phase 2 剩余部分）。
+
+- [x] **Fiber 数据结构**（`packages/react-reconciler/src/ReactFiber.ts`）
+  - FiberNode 字段完整对齐官方（tag/key/elementType/type/stateNode/return/child/sibling/flags/subtreeFlags/lanes/childLanes/alternate…）
+  - createFiber / createFiberFromElement / createFiberFromText / createFiberFromFragment / createHostRootFiber
+  - createWorkInProgress 双缓存（惰性创建 alternate、复用并重置字段）
+
+- [x] **常量体系**
+  - ReactWorkTags（0~8：FunctionComponent/ClassComponent/IndeterminateComponent/HostRoot/HostPortal/HostComponent/HostText/Fragment/Mode）
+  - ReactFiberFlags（主链路用得到的 Placement/Update/ChildDeletion/ContentReset/PerformedWork/Incomplete/DidCapture 等，数值与官方逐位对齐）
+  - ReactFiberLane（**仅 SyncLane 一条**，位运算助手 mergeLanes/includesSomeLane/isSubsetOfLanes/removeLanes 齐备）
+  - ReactRootTags（LegacyRoot/ConcurrentRoot）、ReactTypeOfMode（NoMode/ConcurrentMode）
+
+- [x] **更新队列**（`ReactFiberClassUpdateQueue.ts`）
+  - Update / UpdateQueue / SharedQueue 数据结构（单向循环链表）
+  - createUpdate / enqueueUpdate / processUpdateQueue / cloneUpdateQueue / initializeUpdateQueue
+  - markUpdateLaneFromFiberToRoot（lane 冒泡到根，支撑 beginWork 的 bailout 判断）
+
+- [x] **FiberRoot 与对外入口**
+  - FiberRootNode / createFiberRoot（`ReactFiberRoot.ts`）
+  - createContainer / updateContainer（`ReactFiberReconciler.ts`）
+
+- [x] **workLoop**（`ReactFiberWorkLoop.ts`）
+  - scheduleUpdateOnFiber → renderRootSync → workLoopSync（同步一口气跑完，不可中断）
+  - prepareFreshStack / performUnitOfWork / completeUnitOfWork
+  - commitRoot **精简为只有 mutation 子阶段**（before-mutation / layout 留待后续）
+
+- [x] **beginWork**（`ReactFiberBeginWork.ts`）
+  - HostRoot / HostComponent / HostText / Fragment / Mode / FunctionComponent / IndeterminateComponent 全部分发
+  - 基础 bailout：bailoutOnAlreadyFinishedWork + attemptEarlyBailoutIfNoScheduledUpdate + didReceiveUpdate（props/state 不变跳过子树）
+  - renderWithHooks 目前是占位（直接 `Component(props)`，Hooks 见 Phase 5）
+
+- [x] **completeWork**（`ReactFiberCompleteWork.ts`）
+  - HostComponent：createInstance / appendAllChildren / finalizeInitialChildren
+  - HostText：createTextInstance
+  - updateHostComponent（prepareUpdate 生成 updatePayload 标记 Update）、updateHostText
+  - bubbleProperties（子树 flags/lanes 向上汇总）
+
+- [x] **commit mutation**（`ReactFiberCommitWork.ts`）
+  - Placement（insertOrAppendPlacementNode，含 getHostSibling 锚点定位）
+  - Update（commitUpdate / commitTextUpdate）
+  - Deletion（递归卸载子树）
+  - 错误边界 / effect 卸载 / Portal 分支留待后续
+
+- [x] **Diff 算法**（`ReactChildFiber.ts`）
+  - 单节点 diff（reconcileSingleElement）、单文本 diff（reconcileSingleTextNode）
+  - 多节点 diff（reconcileChildrenArray：头部逐位匹配 → 剩余全新建/全删除 → mapRemainingChildren Map 查找）
+  - placeChild lastPlacedIndex 移动标记、key 匹配
+  - mountChildFibers（不标记副作用）vs reconcileChildFibers（标记副作用）工厂
+
+- [x] **HostConfig 接口**（`ReactFiberHostConfig.ts`）
+  - 平台无关接口 + `setHostConfig` 运行时注入（对照官方构建时 fork 注入）
+  - **尚未有真实渲染器实现注入**，任何调用都会触发 checkHostConfig 抛错
+
+- [x] **Fragment**（beginWork / completeWork / ChildFiber / ReactFiber 均已处理 `REACT_FRAGMENT_TYPE`）
+
+**当前能做什么**：可以创建 ReactElement 对象，并且有一套完整（同步）的 reconciler 主链路——`createContainer/updateContainer` → `workLoopSync` → `commit mutation`，能对 Fiber 树做挂载、单/多节点 diff、更新、删除。但由于 **react-dom 尚未搭建（真实 HostConfig 未注入）**，仍无法渲染到真实 DOM；`fixtures/main.tsx` 目前也只 `console.log` 出 element 验证 JSX。
 
 ## 待实现
 
-### Phase 2: react-dom 入口 + 初始挂载（首屏渲染）
+### Phase 2（剩余）: react-dom 包 + 真实 DOM 渲染
 
-**目标**：实现 `ReactDOM.createRoot(container).render(<App />)`，让 JSX 能显示在页面上。
+**目标**：实现 `ReactDOM.createRoot(container).render(<App />)`，让 JSX 真正显示在页面上（当前 reconciler 主链路已具备，缺的是渲染器这一层）。
 
 #### 2.1 创建 react-dom 包
 
-- 入口文件 `packages/react-dom/index.ts`
+- 入口文件 `packages/react-dom/index.ts` / `react-dom/client`
   - `createRoot(container, options?)` → 返回 ReactDOMRoot 实例
-  - ReactDOMRoot.render(element) → 调用 reconciler 创建 Fiber 树并提交
+  - ReactDOMRoot.render(element) → 调用 reconciler 的 createContainer/updateContainer
 
-#### 2.2 搭建 react-reconciler（协调器核心）
+#### 2.2 注入真实 DOM HostConfig
 
-- **Fiber 数据结构**（`packages/react-reconciler/src/ReactFiber.ts`）
-  - FiberNode 类型定义（tag、type、key、ref、props、stateNode、return/child/sibling、flags 等）
-  - createFiber/createFiberFromElement 工厂函数
-  - HostRoot/HostComponent/FunctionComponent 等 WorkTag 枚举
+- 把 `ReactFiberHostConfig` 的接口实现成 DOM 版本并 `setHostConfig` 注入：
+  - createInstance → `document.createElement`；createTextInstance → `document.createTextNode`
+  - setInitialProperties / finalizeInitialChildren（className、style、children 等属性设置）
+  - prepareUpdate / commitUpdate（updatePayload 扁平数组消费，DOM 属性 diff）
+  - appendChild / insertBefore / removeChild 等
 
-- **初次渲染核心流程**
-  - `createContainer` → 创建 FiberRootNode 和 HostRootFiber
-  - `updateContainer` → 将 ReactElement 挂载到 rootFiber，标记更新
-  - `scheduleUpdateOnFiber` → 触发调度（Phase 2 暂时同步执行，Phase 4 再接入 Scheduler 时间切片）
+#### 2.3 调试方式（第一种已完成，补第二种）
 
-- **beginWork**（`ReactFiberBeginWork.ts`，Fiber 树构建 - 向下递阶段）
-  - 针对不同 WorkTag 调用对应逻辑：
-    - HostRoot：processUpdateQueue 计算新 state（即根节点的 element）
-    - HostComponent（原生 DOM 标签）：创建子 Fiber（reconcileChildren）
-    - FunctionComponent：执行函数拿到 children，创建子 Fiber
-  - reconcileChildren：对比 current Fiber 和新 ReactElement，决定复用/新建/删除子 Fiber
-    - Phase 2 初次挂载只需处理 Placement（插入）标记
-    - Phase 3 更新时再补 diff 算法（key 匹配、单节点/多节点对比）
+- 第一种调试方式（JSX 验证）已具备：`fixtures/` + `scripts/vite/vite.config.mts`（alias 到源码，清空 optimizeDeps 保证改源码即热更）
+- 第二种调试方式（reconciler 调试）：在 workLoop/commit 关键节点埋点或断点，观察 Fiber 树构建与 DOM 变更（对应课程 016）
 
-- **completeWork**（`ReactFiberCompleteWork.ts`，Fiber 树构建 - 向上归阶段）
-  - HostComponent：调用 `createInstance(type, props)` 创建真实 DOM 节点，挂到 fiber.stateNode
-  - 初次挂载时给所有祖先 Fiber 标记 Update flag（bubbleProperties）
-
-#### 2.3 commit 阶段（将 Fiber 树变更应用到 DOM）
-
-- **commitRoot**（`ReactFiberCommitWork.ts`）
-  - Phase 2 只需实现 Placement 插入操作（遍历 effectList，调用 `appendChild/insertBefore`）
-  - 三个子阶段：
-    - before mutation：DOM 变更前的准备工作（Phase 2 可跳过）
-    - mutation：执行 DOM 插入/更新/删除（Phase 2 只需 Placement）
-    - layout：DOM 变更后的副作用（ref 赋值、生命周期回调，Phase 2 可跳过）
-
-#### 2.4 HostConfig（渲染器与平台无关接口）
-
-- `packages/react-reconciler/src/ReactFiberHostConfig.ts`
-  - createInstance(type, props) → document.createElement(type) 并设置属性
-  - appendInitialChild(parent, child) → parent.appendChild(child)
-  - finalizeInitialChildren(instance, type, props) → 设置 DOM 属性（className、style、事件等）
-  - Phase 2 只需实现初次挂载相关的方法，更新相关（updateProperties）等 Phase 3 补
-
-**阶段目标验收**：能够运行以下代码并在页面看到 "Hello, React!"
+**阶段目标验收**：运行 `pnpm dev`，页面显示 "Hello, React!"
 
 ```tsx
 import { jsx } from "react/jsx-runtime";
@@ -90,50 +119,9 @@ root.render(App);
 
 ---
 
-### Phase 3: 更新与 Diff 算法
+### Phase 4: 调度器（Scheduler）+ 时间切片 + 完整 Lane 模型
 
-**目标**：支持多次 `root.render(newElement)` 触发更新，实现高效 diff 避免整树重建。
-
-#### 3.1 双缓存 Fiber 树
-
-- current 树（屏幕上显示的）vs. workInProgress 树（正在构建的）
-- 初次挂载时创建 workInProgress，commit 后交换指针（workInProgress 变成 current）
-- 更新时基于 current 克隆出新的 workInProgress
-
-#### 3.2 Diff 算法（reconcileChildren 完整实现）
-
-- **单节点 diff**（reconcileSingleElement）
-  - 对比 key + type 判断是否复用旧 Fiber
-  - 复用时标记 Update，否则标记 Placement（新建）+ Deletion（删除旧的）
-
-- **多节点 diff**（reconcileChildrenArray）
-  - 第一轮遍历：新旧数组头部逐一对比（key 相同则复用，不同则中断）
-  - 第二轮遍历：处理剩余节点
-    - 旧节点用完 → 新节点全部 Placement
-    - 新节点用完 → 旧节点全部 Deletion
-    - 都有剩余 → 旧节点建 Map（key → fiber），遍历新节点查 Map 决定复用/新建
-  - 标记移动（lastPlacedIndex 算法判断节点是否需要移动）
-
-#### 3.3 completeWork 更新分支
-
-- HostComponent 更新时调用 `prepareUpdate(instance, type, oldProps, newProps)`
-  - 对比新旧 props，生成 updatePayload（[key1, value1, key2, value2, ...]）
-  - 标记 Update flag
-
-#### 3.4 commit 阶段增强
-
-- **mutation 阶段**
-  - Placement：插入 DOM（已在 Phase 2 实现）
-  - Update：调用 `commitUpdate(instance, updatePayload)` 更新 DOM 属性
-  - Deletion：调用 `removeChild` 移除 DOM 节点（递归卸载子树）
-
-**阶段目标验收**：能够连续调用 `root.render(element)` 多次，观察到 DOM 高效更新而非整树重建。
-
----
-
-### Phase 4: 调度器（Scheduler）+ 时间切片
-
-**目标**：实现可中断的渲染，避免长时间占用主线程导致卡顿。
+**目标**：实现可中断的渲染，避免长时间占用主线程导致卡顿。当前只有 SyncLane + 同步 workLoop，需要补 scheduler 包和完整优先级体系。
 
 #### 4.1 创建 scheduler 包
 
@@ -143,30 +131,31 @@ root.render(App);
   - 最小堆管理任务队列（按 expirationTime 排序）
   - shouldYieldToHost() → 判断当前帧是否还有剩余时间（5ms 阈值）
 
-#### 4.2 reconciler 接入 Scheduler
+#### 4.2 展开完整 Lane 模型
 
-- scheduleUpdateOnFiber 调用 `ensureRootIsScheduled`
-  - 根据优先级（SyncLane/InputDiscreteLane/DefaultLane 等）选择调度方式
-  - 同步更新（如 ReactDOM.flushSync）→ 直接调用 performSyncWorkOnRoot
-  - 并发更新 → 通过 Scheduler.scheduleCallback 注册 performConcurrentWorkOnRoot
+- 当前 `ReactFiberLane.ts` 只有 SyncLane，补齐：
+  - SyncLane / InputContinuousLane / DefaultLane / TransitionLane / IdleLane / OffscreenLane…
+  - getHighestPriorityLane / getNextLanes / markRootUpdated 等优先级计算
+  - lane 过期时间（expirationTime）与饥饿防饿死
 
-#### 4.3 workLoop 可中断化
+#### 4.3 reconciler 接入 Scheduler
 
-- `workLoopConcurrent` 在每次处理一个 Fiber 后检查 `shouldYield()`
-  - 有剩余时间 → 继续处理下一个 Fiber（beginWork/completeWork）
-  - 时间用完 → 中断，保存当前进度（workInProgressRoot），yield 给浏览器
-  - 下一帧继续从中断点恢复（Scheduler 重新调度回调）
+- scheduleUpdateOnFiber 改造为 `ensureRootIsScheduled`
+  - 根据 lane 选择调度方式：同步更新（离散事件/flushSync）→ performSyncWorkOnRoot；并发更新 → Scheduler.scheduleCallback(performConcurrentWorkOnRoot)
+  - 补 executionContext 的 BatchedContext / EventContext（批处理与事件系统也依赖它）
 
-#### 4.4 优先级体系
+#### 4.4 workLoop 可中断化
 
-- Lane 模型（packages/react-reconciler/src/ReactFiberLane.ts）
-  - SyncLane（最高优先级，如 flushSync、离散事件）
-  - InputContinuousLane（连续输入，如 drag/scroll）
-  - DefaultLane（普通更新）
-  - TransitionLane（过渡更新，可被高优先级打断）
-- 高优先级更新打断低优先级渲染（记录被跳过的 lanes，commit 后重新调度）
+- `workLoopConcurrent` 每次处理一个 Fiber 后检查 `shouldYield()`
+  - 有剩余时间 → 继续；时间用完 → 中断保存进度（workInProgressRoot），yield 给浏览器
+  - 下一帧从中断点恢复（prepareFreshStack 的复用分支目前直接断言，需补齐）
 
-**阶段目标验收**：能够在 DevTools Profiler 中观察到渲染任务被分片执行，不阻塞用户输入。
+#### 4.5 并发更新下的状态计算
+
+- processUpdateQueue 按 renderLanes 跳过/合并低优先级 update（当前是单 lane 无跳过分支）
+- baseState/baseUpdate 重放逻辑：高优先级打断后，被跳过的低优先级 update 记录到 base 队列，下次渲染重放（对应课程 041-042）
+
+**阶段目标验收**：DevTools Profiler 中观察到渲染任务被分片执行，不阻塞用户输入。
 
 ---
 
@@ -178,42 +167,34 @@ root.render(App);
 
 - `packages/react-reconciler/src/ReactFiberHooks.ts`
   - Hook 链表挂在 Fiber.memoizedState 上
-  - 每个 Hook 节点包含：memoizedState（当前值）、queue（更新队列）、next（链表指针）
+  - 每个 Hook 节点：memoizedState（当前值）、queue（更新队列）、next（链表指针）
 
 #### 5.2 Dispatcher 切换机制
 
-- ReactCurrentDispatcher（shared/ReactSharedInternals.ts）
-  - 不同阶段切换不同 Dispatcher 实现：
-    - HooksDispatcherOnMount（初次渲染）
-    - HooksDispatcherOnUpdate（更新）
-    - InvalidNestedHooksDispatcher（非函数组件上下文，抛错）
+- ReactCurrentDispatcher（shared/ReactSharedInternals 目前只有 ReactCurrentOwner，需补）
+  - HooksDispatcherOnMount / HooksDispatcherOnUpdate / InvalidNestedHooksDispatcher
+  - renderWithHooks 替换占位实现（切换 Dispatcher、建立 Hook 链表、设置 ReactCurrentOwner）
 
 #### 5.3 核心 Hooks 实现
 
-- **useState**
-  - mountState：创建 Hook 节点，初始化 queue
-  - updateState：遍历 queue 计算新 state（baseState + 跳过的更新 + 当前更新）
-  - dispatchSetState：创建 update 对象，加入 queue，调度更新
+- **useState**：mountState / updateState / dispatchSetState（创建 update、加入 queue、调度更新）
+- **useEffect**：mountEffect / updateEffect（deps 对比、标记 Passive flag）
+  - commit 阶段异步执行 flushPassiveEffects：先执行 destroy 清理，再执行 create，缓存 destroy
+  - 补 commitRoot 的 before-mutation / layout 子阶段（Passive effect 的调度入口）
+- **useRef**：mountRef 创建 { current: initialValue }
+- **useMemo / useCallback**：对比 deps，变化则重算，否则返回缓存值
+- **useTransition**：startTransition 把更新标记为 TransitionLane，返回 isPending（对应课程 043-044）
 
-- **useEffect**
-  - mountEffect：创建 Effect 对象（create、destroy、deps），挂到 fiber.updateQueue
-  - updateEffect：对比 deps，deps 变化则标记 fiber 的 Passive flag
-  - commit 阶段异步执行（flushPassiveEffects）：
-    - 先执行所有 destroy 清理函数
-    - 再执行所有 create 副作用函数，缓存返回的 destroy
+#### 5.4 调试方式（第三种）
 
-- **useRef**：mountRef 创建 { current: initialValue }，updateRef 直接返回
+- hooks 调试：在 Dispatcher 切换 / Hook 链表构建处断点，观察 hook 状态变化（对应课程 019）
 
-- **useMemo / useCallback**：对比 deps，变化则重新计算，否则返回缓存值
+#### 5.5 noop-renderer（测试渲染器）
 
-#### 5.4 FunctionComponent beginWork 增强
+- 新建 `react-noop-renderer` 包（官方 packages/react-noop-renderer 对应用来测 reconciler 的宿主）
+  - 实现一套不操作真实 DOM 的 HostConfig（内存树），配合 useEffect 等副作用做确定性测试（对应课程 035-037）
 
-- renderWithHooks：
-  - 切换 Dispatcher
-  - 调用函数组件 `Component(props)`
-  - 返回 children 用于 reconcileChildren
-
-**阶段目标验收**：能够使用 `useState` 管理状态并触发重渲染，`useEffect` 在 commit 后异步执行。
+**阶段目标验收**：`useState` 管理状态并触发重渲染，`useEffect` 在 commit 后异步执行，且可通过 noop-renderer 单测断言副作用执行顺序。
 
 ---
 
@@ -236,11 +217,11 @@ root.render(App);
 #### 6.3 合成事件对象
 
 - SyntheticEvent 包装原生 event，抹平浏览器差异
-- 事件池复用（React 17 后已移除池化，但本项目可对照早期实现学习）
+- 事件池复用（React 17 后已移除池化，本项目可对照早期实现学习）
 
 #### 6.4 批量更新（事件回调中的 setState 自动批处理）
 
-- executionContext 栈标记当前是否在事件处理上下文
+- 依赖 Phase 4.3 的 executionContext（BatchedContext/EventContext）
 - 事件回调中的更新不立即 flush，收集到批次结束后统一 commit
 
 **阶段目标验收**：能够监听 onClick、onChange 等事件，事件回调中多次 setState 只触发一次重渲染。
@@ -249,16 +230,16 @@ root.render(App);
 
 ### Phase 7: Context API
 
-#### 7.1 createContext / Provider / Consumer
+#### 7.1 createContext / Provider / Consumer / useContext
 
 - createContext(defaultValue) → { Provider, Consumer, _currentValue }
 - Provider 组件：beginWork 时将 value 压入栈（pushProvider）
-- 消费：函数组件中 useContext(Context)，class 组件中 contextType / Consumer
+- 消费：函数组件 useContext(Context)，class 组件 contextType / Consumer
 
-#### 7.2 context 变化时的传播
+#### 7.2 context 变化时的传播与 bailout 兼容
 
 - Provider 的 value 变化时，标记子树中所有消费该 context 的 Fiber 需要更新
-- bailout 优化：props 不变且无 context 消费时跳过子树渲染
+- context 与 bailout 策略联动：无 context 消费时跳过子树渲染（基础 bailout 已实现，需补 dependencies 记录 context 依赖，对应课程 063）
 
 **阶段目标验收**：Provider 更新 value 后，消费该 context 的子组件自动重渲染。
 
@@ -268,26 +249,39 @@ root.render(App);
 
 #### 8.1 ClassComponent beginWork
 
-- 实例化组件：new Component(props, context)
-- 挂载阶段：调用 constructor → getDerivedStateFromProps → render → componentDidMount
+- shouldConstruct（type.prototype 是否为 React.Component 子类）区分 class/function（当前 mountIndeterminateComponent 一律按函数组件定型）
+- 实例化：new Component(props, context)
+- 挂载阶段：constructor → getDerivedStateFromProps → render → componentDidMount
 - 更新阶段：shouldComponentUpdate → render → getSnapshotBeforeUpdate → componentDidUpdate
 
-#### 8.2 setState 实现
+#### 8.2 setState / forceUpdate
 
-- 创建 Update 对象加入 fiber.updateQueue
-- 调用 scheduleUpdateOnFiber 触发调度
+- 复用 ReactFiberClassUpdateQueue 的 Update 队列（回调 effect、forceUpdate 分支当前是空壳）
 
 **阶段目标验收**：能够使用 class 组件，生命周期按正确顺序执行。
 
 ---
 
-### Phase 9: 其他核心 API
+### Phase 9: 其他核心 API + 性能优化
 
-- **Suspense**：捕获 Promise throw，显示 fallback，Promise resolve 后重新渲染
-- **forwardRef**：转发 ref 到子组件
-- **memo**：浅比较 props，props 不变时跳过重渲染
-- **lazy**：动态 import 组件，配合 Suspense 实现代码分割
-- **Portal**：将子树渲染到其他 DOM 节点（createPortal）
+#### 9.1 Suspense 完整实现（对应课程 049-055）
+
+- 捕获 Promise throw，显示 fallback，Promise resolve 后重新渲染
+- **unwind 流程**：渲染中断后的回退（completeUnitOfWork 的 Incomplete 分支当前留空，需补齐）
+- **use（试验性 hook）**：Suspense 的触发入口
+- 补 ReactSymbols 的 REACT_SUSPENSE_TYPE、ReactWorkTags 的 SuspenseComponent 等
+
+#### 9.2 forwardRef / memo / lazy / Portal
+
+- **forwardRef**：转发 ref 到子组件（需补 markRef、coerceRef 字符串 ref 自动转换、Ref flag 的 commit 处理）
+- **memo**：浅比较 props，props 不变时跳过重渲染（需补 MemoComponent/SimpleMemoComponent tag 与 REACT_MEMO_TYPE）
+- **lazy**：动态 import 组件，配合 Suspense 实现代码分割（需补 REACT_LAZY_TYPE）
+- **Portal**：createPortal 将子树渲染到其他 DOM 节点（需补 HostPortal 的 commit 空壳分支）
+
+#### 9.3 性能优化策略（对应课程 056-063）
+
+- **eagerState**：dispatchSetState 时若 state 不变则提前 bailout，跳过整次调度（基础 bailout 已实现，eagerState 是 dispatch 侧优化）
+- **React.memo / useMemo / useCallback**：与 bailout 联动的 props 浅比较（见 9.2 / Phase 5.3）
 
 ---
 
