@@ -21,9 +21,9 @@
   - 标识注入（`__react_source: "g-react-source"`，方便控制台区分）
   - Rollup 构建产出 cjs/esm（dev+prod）和 iife 格式 bundle
 
-### Phase 2/3（部分）: Reconciler 主链路 + 更新与 Diff
+### Phase 2（简版）: react-dom 包 + 真实 DOM 渲染
 
-> 说明：reconciler 的骨架和主链路已经落地，走的是「同步渲染」路径（单 lane）。react-dom 渲染器本身尚未搭建（见 Phase 2 剩余部分）。
+> 说明：走的是「同步渲染」路径（单 lane），react-dom 为简版（不含 hydrate / legacy render / 事件系统，见下文待实现区）。
 
 - [x] **Fiber 数据结构**（`packages/react-reconciler/src/ReactFiber.ts`）
   - FiberNode 字段完整对齐官方（tag/key/elementType/type/stateNode/return/child/sibling/flags/subtreeFlags/lanes/childLanes/alternate…）
@@ -67,12 +67,6 @@
   - Deletion（递归卸载子树）
   - 错误边界 / effect 卸载 / Portal 分支留待后续
 
-- [x] **Diff 算法**（`ReactChildFiber.ts`）
-  - 单节点 diff（reconcileSingleElement）、单文本 diff（reconcileSingleTextNode）
-  - 多节点 diff（reconcileChildrenArray：头部逐位匹配 → 剩余全新建/全删除 → mapRemainingChildren Map 查找）
-  - placeChild lastPlacedIndex 移动标记、key 匹配
-  - mountChildFibers（不标记副作用）vs reconcileChildFibers（标记副作用）工厂
-
 - [x] **HostConfig 接口**（`ReactFiberHostConfig.ts`）
   - 平台无关接口，**构建时 fork 注入**（对齐官方 forks/ReactFiberHostConfig.custom.js）
   - 占位模块每个导出都 throw，react-dom 构建时把它替换成 `ReactDOMHostConfig`（reconciler 自身仍以 shim 打包）
@@ -85,44 +79,24 @@
 
 - [x] **Fragment**（beginWork / completeWork / ChildFiber / ReactFiber 均已处理 `REACT_FRAGMENT_TYPE`）
 
+### Phase 3: 更新与 Diff 算法
+
+- [x] **Diff 算法**（`ReactChildFiber.ts`）
+  - 单节点 diff（reconcileSingleElement）、单文本 diff（reconcileSingleTextNode）
+  - 多节点 diff（reconcileChildrenArray：头部逐位匹配 → 剩余全新建/全删除 → mapRemainingChildren Map 查找）
+  - placeChild lastPlacedIndex 移动标记、key 匹配
+  - mountChildFibers（不标记副作用）vs reconcileChildFibers（标记副作用）工厂
+
+- [x] **Fiber 树反射**（`ReactFiberTreeReflection.ts` + `react-reconciler/reflection` 入口）
+  - getNearestMountedFiber（沿 return 指针找最近的已挂载 Fiber）
+  - findCurrentHostFiber（深度优先找第一个真实 DOM 节点对应的 Fiber）
+  - reflection 入口独立于主入口打包，供渲染器按需引入定位真实 DOM 节点（对照官方 reflection.js）
+
 **当前能做什么**：可以创建 ReactElement 对象，有一套完整（同步）的 reconciler 主链路——`createContainer/updateContainer` → `workLoopSync` → `commit mutation`，能对 Fiber 树做挂载、单/多节点 diff、更新、删除；并通过 react-dom 简版的 `createRoot().render()` 把结果渲染到真实 DOM（HostConfig 由构建时 fork 注入）。`fixtures/` 用 react-dom 驱动 reconciler 调试，`pnpm dev` 可看到挂载与二次更新的 DOM 变化。
 
 ## 待实现
 
-### Phase 2（简版已完成）: react-dom 包 + 真实 DOM 渲染
-
-> **简版已落地**：`ReactDOM.createRoot(container).render(<App />)` 已能渲染到真实 DOM（见上文「已完成」的 react-dom 简版条目）。以下 2.1/2.2 已按简版完成，2.3 调试方式已具备；后续 Phase 补齐 hydrate、legacy render、事件系统与 DOMPropertyOperations 完整体系。
-
-#### 2.1 创建 react-dom 包 ✅（简版）
-
-- 入口文件 `packages/react-dom/index.ts` / `react-dom/client`
-  - `createRoot(container, options?)` → 返回 ReactDOMRoot 实例
-  - ReactDOMRoot.render(element) → 调用 reconciler 的 createContainer/updateContainer
-
-#### 2.2 注入真实 DOM HostConfig ✅（简版）
-
-- 把 `ReactFiberHostConfig` 的接口实现成 DOM 版本并**构建时 fork 注入**（对齐官方 forks.js）：
-  - createInstance → `document.createElement`；createTextInstance → `document.createTextNode`
-  - setInitialProperties / finalizeInitialChildren（className、style、children 等属性设置）
-  - prepareUpdate / commitUpdate（updatePayload 扁平数组消费，DOM 属性 diff）
-  - appendChild / insertBefore / removeChild 等
-- 简版边界：事件 on* 忽略、shouldSetTextContent 恒 false、布尔属性/dangerouslySetInnerHTML 留待后续 Phase
-
-#### 2.3 调试方式 ✅
-
-- 第一种调试方式（JSX 验证）已具备：`fixtures/` + `scripts/vite/vite.config.mts`（alias 到源码，清空 optimizeDeps 保证改源码即热更）
-- 第二种调试方式（reconciler 调试）已具备：`fixtures/reconciler/` 用 react-dom 的 createRoot 驱动挂载/更新/diff，在 workLoop/commit 关键节点埋点或断点，观察 Fiber 树构建与 DOM 变更（对应课程 016）
-
-**阶段目标验收**：运行 `pnpm dev`，页面显示 "Hello, React!"
-
-```tsx
-import { jsx } from "react/jsx-runtime";
-import ReactDOM from "react-dom/client";
-
-const App = jsx("div", { children: "Hello, React!" });
-const root = ReactDOM.createRoot(document.getElementById("root")!);
-root.render(App);
-```
+> **Phase 2 / Phase 3 已完成**：`react-dom` 包（`createRoot(container).render(<App />)` 渲染到真实 DOM，简版）与 reconciler 主链路 + 更新与 Diff 算法均已落地，详见上文「已完成」区，故待实现项从 **Phase 4** 开始。后续 Phase 补齐 hydrate、legacy render、事件系统与 DOMPropertyOperations 完整体系。
 
 ---
 
