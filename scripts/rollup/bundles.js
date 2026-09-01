@@ -19,7 +19,7 @@ const moduleTypes = {
 // 对照官方 scripts/rollup/bundles.js：每新增一个可独立发布的包（react、react-dom、scheduler ...），
 // 在这里补一条 bundle 描述，build.js 会据此批量打包。
 // 当前 packages/shared 只被其他包内部引用，不单独产出 bundle，故不在此列出。
-const bundles = [
+const bundles = [ 
   {
     moduleType: moduleTypes.ISOMORPHIC,
     packageName: "react",
@@ -45,12 +45,40 @@ const bundles = [
     externals: [],
     bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
   },
+   /******* React JSX DEV Runtime *******/
   {
     moduleType: moduleTypes.ISOMORPHIC,
     packageName: "react",
     name: "react-jsx-dev-runtime",
     entry: "packages/react/src/jsx-dev-runtime.ts",
     externals: [],
+    bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
+  },
+   /******* React Reconciler *******/
+  {
+    moduleType: moduleTypes.RECONCILER,
+    packageName: "react-reconciler",
+    name: "react-reconciler",
+    entry: "packages/react-reconciler/index.ts",
+    externals: ["react"],
+    bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
+  },
+   /******* Reconciler Reflection *******/
+  {
+    moduleType: moduleTypes.RECONCILER,
+    packageName: "react-reconciler",
+    name: "react-reconciler-reflection",
+    entry: "packages/react-reconciler/reflection.ts",
+    externals: ["react"],
+    bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
+  },
+  /******* Reconciler Constants *******/
+  {
+    moduleType: moduleTypes.RECONCILER,
+    packageName: "react-reconciler",
+    name: "react-reconciler-constants",
+    entry: "packages/react-reconciler/constants.ts",
+    externals: ["react"],
     bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
   },
 ];

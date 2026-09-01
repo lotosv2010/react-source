@@ -1,0 +1,22 @@
+{
+  "name": "react-reconciler",
+  "description": "React package for creating custom renderers.",
+  "version": "1.0.0",
+  "keywords": [
+    "react"
+  ],
+  "scripts": {
+    "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/"
+  },
+  "dependencies": {
+    "shared": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lotosv2010/react-source.git",
+    "directory": "packages/react-reconciler"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

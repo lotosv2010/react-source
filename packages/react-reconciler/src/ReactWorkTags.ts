@@ -1,0 +1,21 @@
+/**
+ * @file Fiber 节点类型标签
+ * @description 标识 Fiber 对应的组件类型，beginWork/completeWork 靠 tag 分发处理逻辑
+ */
+
+// 对照官方 packages/react-reconciler/src/ReactWorkTags.js：用数字常量而非字符串枚举，
+// 数值和官方保持一致，方便以后对照官方 DevTools/调试工具里看到的 tag 值。
+// 当前只列出主链路用得到的 tag（FunctionComponent/HostRoot/HostComponent/HostText/Fragment
+// 等），ClassComponent/Portal 等对应功能落地时再补，不提前铺数值。
+
+export type WorkTag = number;
+
+export const FunctionComponent = 0;
+export const ClassComponent = 1;
+export const IndeterminateComponent = 2;
+export const HostRoot = 3;
+export const HostPortal = 4;
+export const HostComponent = 5;
+export const HostText = 6;
+export const Fragment = 7;
+export const Mode = 8;
