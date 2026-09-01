@@ -15,11 +15,6 @@ import {
   scheduleUpdateOnFiber,
 } from "./ReactFiberWorkLoop";
 
-// 官方 host config 由渲染器在构建时通过 fork 注入（forks/ReactFiberHostConfig.custom.js），
-// 本项目改为运行时注入：渲染器（react-dom 或测试宿主）调用 setHostConfig 注入实现。
-export { setHostConfig } from "./ReactFiberHostConfig";
-export type { HostConfig } from "./ReactFiberHostConfig";
-
 export type { FiberRootNode };
 
 /**

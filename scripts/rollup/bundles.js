@@ -81,6 +81,17 @@ const bundles = [
     externals: ["react"],
     bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
   },
+  /******* React DOM *******/
+  {
+    moduleType: moduleTypes.RENDERER,
+    packageName: "react-dom",
+    name: "react-dom",
+    entry: "packages/react-dom/index.ts",
+    // 对照官方：react-dom 只把 react 作为 external，reconciler/shared 都 inline 进产物
+    externals: ["react"],
+    // 简版先只产 cjs（NODE_DEV/NODE_PROD），UMD 产物后续补
+    bundleTypes: [bundleTypes.NODE_DEV, bundleTypes.NODE_PROD],
+  },
 ];
 
 module.exports = {

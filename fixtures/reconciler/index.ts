@@ -1,17 +1,10 @@
 import "./index.css";
 import { Fragment, jsx } from "react/jsx-runtime";
-import {
-  createContainer,
-  setHostConfig,
-  updateContainer,
-} from "react-reconciler";
-import { ConcurrentRoot } from "react-reconciler/constants";
+import { createRoot } from "react-dom/client";
 
-import { domHostConfig, setRootHostContainer } from "./domHostConfig";
-
-// react-dom 还没搭建，这里注入一份手写的 DOM HostConfig（domHostConfig.ts），
-// 直接驱动 reconciler 的同步主链路（mount → update → diff → commit）渲染到真实 DOM，
-// 验证 setHostConfig 运行时注入 + Fiber 主链路能跑通。等 react-dom 落地后删除。
+// 用 react-dom 的 createRoot 驱动 reconciler 的同步主链路（mount → update → diff → commit）
+// 渲染到真实 DOM。HostConfig 由构建时 fork 注入（vite alias 把 ReactFiberHostConfig
+// 替换成 react-dom 的 ReactDOMHostConfig），不再手写 host config 直连 reconciler。
 
 // 演示组件：根据 props.stage 渲染不同结构，覆盖挂载 / 文本更新 / 多节点 diff（删除+移动）
 function App(props: { stage: number }): any {
@@ -47,15 +40,12 @@ function runReconcilerDemo(): void {
     throw new Error("找不到 #root 容器，请检查 index.html");
   }
 
-  setRootHostContainer(rootElement);
-  setHostConfig(domHostConfig);
-
-  // 对照 ReactDOM.createRoot：ConcurrentRoot 是 createRoot 用的根模式（这里借它构造 HostRoot）
-  const container = createContainer(rootElement, ConcurrentRoot);
+  // 对照 ReactDOM.createRoot：createRoot(container) 返回 ReactDOMRoot，调用 render 渲染
+  const root = createRoot(rootElement);
 
   let stage = 1;
   const render = (nextStage: number): void => {
-    updateContainer(jsx(App, { stage: nextStage }), container);
+    root.render(jsx(App, { stage: nextStage }));
   };
 
   render(stage);

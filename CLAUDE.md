@@ -40,13 +40,14 @@
 
 ## 当前状态
 
-monorepo 骨架与 reconciler 主链路已搭建：
+monorepo 骨架、reconciler 主链路与 react-dom 简版已搭建：
 
 - 根目录：`package.json`、`pnpm-workspace.yaml`、`tsconfig.json`、`eslint.config.js`、`turbo.json`
 - 工具链：ESLint + Prettier（lint/格式化）、Husky + lint-staged + commitlint（提交检查）、Rollup（构建）、Vite（fixtures 源码调试）
 - `packages/shared`：跨包共享工具/常量/类型（objectIs、hasOwnProperty、ReactSymbols、ReactTypes 等）
 - `packages/react`：JSX 运行时（createElement/jsx/jsxDEV + jsx-runtime/jsx-dev-runtime 入口），构建产出 cjs/esm（dev+prod）和 iife 三种格式
-- `packages/react-reconciler`：Fiber 主链路（同步路径）——Fiber 数据结构、更新队列、beginWork/completeWork、commit mutation、单/多节点 diff、Fragment、单 lane 模型、HostConfig 接口（`setHostConfig` 运行时注入）
+- `packages/react-reconciler`：Fiber 主链路（同步路径）——Fiber 数据结构、更新队列、beginWork/completeWork、commit mutation、单/多节点 diff、Fragment、单 lane 模型、HostConfig 接口（**构建时 fork 注入**，对齐官方 forks.js）
+- `packages/react-dom`（简版）：`createRoot(container).render(element)` 同步渲染到真实 DOM；HostConfig 由 build.js 的 fork 插件 / vite alias 把 `ReactFiberHostConfig` 替换为 `ReactDOMHostConfig`；npm 分发文件夹 + bundles.js 注册（cjs dev/prod）。简版边界：不含 hydrate / legacy render / 事件系统 / shouldSetTextContent 优化
 - 常用命令：`pnpm dev`（fixtures 调试）、`pnpm lint` / `pnpm lint:fix`、`pnpm format` / `pnpm format:check`、`pnpm build`、`npx tsc --noEmit`
 
-`react-dom` / `scheduler` 尚未创建（reconciler 的 HostConfig 尚未有真实渲染器实现注入，还渲染不到真实 DOM），按渲染链路推进顺序逐个搭建。详细进度见 [docs/roadmap.md](./docs/roadmap.md)。
+`scheduler` 尚未创建（单 lane 模型、同步 workLoop），按渲染链路推进顺序逐个搭建。详细进度见 [docs/roadmap.md](./docs/roadmap.md)。

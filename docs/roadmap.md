@@ -74,37 +74,44 @@
   - mountChildFibers（不标记副作用）vs reconcileChildFibers（标记副作用）工厂
 
 - [x] **HostConfig 接口**（`ReactFiberHostConfig.ts`）
-  - 平台无关接口 + `setHostConfig` 运行时注入（对照官方构建时 fork 注入）
-  - **尚未有真实渲染器实现注入**，任何调用都会触发 checkHostConfig 抛错
+  - 平台无关接口，**构建时 fork 注入**（对齐官方 forks/ReactFiberHostConfig.custom.js）
+  - 占位模块每个导出都 throw，react-dom 构建时把它替换成 `ReactDOMHostConfig`（reconciler 自身仍以 shim 打包）
+
+- [x] **react-dom 简版**（`packages/react-dom`）
+  - `createRoot(container).render(element)`：ReactDOMClient → ReactDOMRoot，底层走 reconciler 的 createContainer/updateContainer
+  - DOM HostConfig（`ReactDOMHostConfig.ts`）：createInstance/createTextInstance、className/style/普通属性子集、prepareUpdate/commitUpdate、appendChild/insertBefore/removeChild 等
+  - npm 分发文件夹 + rollup 构建产物（cjs dev/prod），bundles.js 注册 react-dom bundle，build.js fork 注入 HostConfig
+  - 简版边界：不含 hydrate / legacy render / 事件系统 / shouldSetTextContent 优化 / DOMPropertyOperations 完整体系，留待后续 Phase
 
 - [x] **Fragment**（beginWork / completeWork / ChildFiber / ReactFiber 均已处理 `REACT_FRAGMENT_TYPE`）
 
-**当前能做什么**：可以创建 ReactElement 对象，并且有一套完整（同步）的 reconciler 主链路——`createContainer/updateContainer` → `workLoopSync` → `commit mutation`，能对 Fiber 树做挂载、单/多节点 diff、更新、删除。但由于 **react-dom 尚未搭建（真实 HostConfig 未注入）**，仍无法渲染到真实 DOM；`fixtures/main.tsx` 目前也只 `console.log` 出 element 验证 JSX。
+**当前能做什么**：可以创建 ReactElement 对象，有一套完整（同步）的 reconciler 主链路——`createContainer/updateContainer` → `workLoopSync` → `commit mutation`，能对 Fiber 树做挂载、单/多节点 diff、更新、删除；并通过 react-dom 简版的 `createRoot().render()` 把结果渲染到真实 DOM（HostConfig 由构建时 fork 注入）。`fixtures/` 用 react-dom 驱动 reconciler 调试，`pnpm dev` 可看到挂载与二次更新的 DOM 变化。
 
 ## 待实现
 
-### Phase 2（剩余）: react-dom 包 + 真实 DOM 渲染
+### Phase 2（简版已完成）: react-dom 包 + 真实 DOM 渲染
 
-**目标**：实现 `ReactDOM.createRoot(container).render(<App />)`，让 JSX 真正显示在页面上（当前 reconciler 主链路已具备，缺的是渲染器这一层）。
+> **简版已落地**：`ReactDOM.createRoot(container).render(<App />)` 已能渲染到真实 DOM（见上文「已完成」的 react-dom 简版条目）。以下 2.1/2.2 已按简版完成，2.3 调试方式已具备；后续 Phase 补齐 hydrate、legacy render、事件系统与 DOMPropertyOperations 完整体系。
 
-#### 2.1 创建 react-dom 包
+#### 2.1 创建 react-dom 包 ✅（简版）
 
 - 入口文件 `packages/react-dom/index.ts` / `react-dom/client`
   - `createRoot(container, options?)` → 返回 ReactDOMRoot 实例
   - ReactDOMRoot.render(element) → 调用 reconciler 的 createContainer/updateContainer
 
-#### 2.2 注入真实 DOM HostConfig
+#### 2.2 注入真实 DOM HostConfig ✅（简版）
 
-- 把 `ReactFiberHostConfig` 的接口实现成 DOM 版本并 `setHostConfig` 注入：
+- 把 `ReactFiberHostConfig` 的接口实现成 DOM 版本并**构建时 fork 注入**（对齐官方 forks.js）：
   - createInstance → `document.createElement`；createTextInstance → `document.createTextNode`
   - setInitialProperties / finalizeInitialChildren（className、style、children 等属性设置）
   - prepareUpdate / commitUpdate（updatePayload 扁平数组消费，DOM 属性 diff）
   - appendChild / insertBefore / removeChild 等
+- 简版边界：事件 on* 忽略、shouldSetTextContent 恒 false、布尔属性/dangerouslySetInnerHTML 留待后续 Phase
 
-#### 2.3 调试方式（第一种已完成，补第二种）
+#### 2.3 调试方式 ✅
 
 - 第一种调试方式（JSX 验证）已具备：`fixtures/` + `scripts/vite/vite.config.mts`（alias 到源码，清空 optimizeDeps 保证改源码即热更）
-- 第二种调试方式（reconciler 调试）：在 workLoop/commit 关键节点埋点或断点，观察 Fiber 树构建与 DOM 变更（对应课程 016）
+- 第二种调试方式（reconciler 调试）已具备：`fixtures/reconciler/` 用 react-dom 的 createRoot 驱动挂载/更新/diff，在 workLoop/commit 关键节点埋点或断点，观察 Fiber 树构建与 DOM 变更（对应课程 016）
 
 **阶段目标验收**：运行 `pnpm dev`，页面显示 "Hello, React!"
 

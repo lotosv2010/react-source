@@ -134,11 +134,12 @@ Hooks 不是魔法，本质是：
 对照 [roadmap.md](./roadmap.md)，当前已实现：
 
 - **最上层（JSX → ReactElement）**：`packages/react` 的 createElement/jsx/jsxDEV + jsx-runtime/jsx-dev-runtime 入口，架构图中 "React 核心 API" 这一层已完成。
-- **reconciler 主链路（同步路径）**：`packages/react-reconciler` 已具备 Fiber 数据结构、双缓存、更新队列、beginWork/completeWork、commit mutation、单/多节点 diff、Fragment、单 lane 模型，以及 `setHostConfig` 运行时注入的 HostConfig 接口。
+- **reconciler 主链路（同步路径）**：`packages/react-reconciler` 已具备 Fiber 数据结构、双缓存、更新队列、beginWork/completeWork、commit mutation、单/多节点 diff、Fragment、单 lane 模型，以及**构建时 fork 注入**的 HostConfig 接口。
+- **渲染器层（简版）**：`packages/react-dom` 已落地 `createRoot().render()` 同步渲染，DOM HostConfig 通过构建时 fork 注入 reconciler。
 
 尚未落地（也是下一步方向）：
 
-- **渲染器层**：`react-dom` 尚未创建，HostConfig 没有真实 DOM 实现注入，因此还无法把 Fiber 变更落地到浏览器 DOM。
+- **渲染器层（剩余）**：react-dom 还只有简版（不含 hydrate / legacy render / 事件系统 / DOMPropertyOperations 完整体系），完整渲染器随后续 Phase 补齐。
 - **调度器层**：`scheduler` 尚未创建，workLoop 目前是同步一口气跑完（单 SyncLane），还没有时间切片 / 完整 Lane 模型 / 优先级抢占。
 - **Hooks 层**：`ReactFiberHooks` 尚未创建，函数组件的 renderWithHooks 是占位实现（直接调用 Component），还没有 useState/useEffect 等。
 

@@ -29,8 +29,8 @@ function copyDirSync(srcDir, destDir) {
 
 // 对照官方发布包的 package.json 字段，但去掉 npm/ 前缀（这里描述的就是发布目录本身），
 // 也不带 workspace 依赖（shared 的代码已经被 rollup 打进各个 bundle，发布包不需要额外依赖它）。
-// react 包带 jsx-runtime/jsx-dev-runtime 两个独立入口；react-reconciler 带 constants/reflection 两个独立入口，
-// 两者 files/exports 不同，故按包名区分。
+// react 包带 jsx-runtime/jsx-dev-runtime 两个独立入口；react-reconciler 带 constants/reflection 两个独立入口；
+// react-dom 带 client 独立入口，三者 files/exports 不同，故按包名区分。
 function buildPublishPackageJson(sourcePackageJson) {
   if (sourcePackageJson.name === "react-reconciler") {
     return {
@@ -52,6 +52,28 @@ function buildPublishPackageJson(sourcePackageJson) {
         ".": "./index.js",
         "./constants": "./constants.js",
         "./reflection": "./reflection.js",
+        "./package.json": "./package.json",
+      },
+    };
+  }
+  if (sourcePackageJson.name === "react-dom") {
+    return {
+      name: sourcePackageJson.name,
+      description: sourcePackageJson.description,
+      keywords: sourcePackageJson.keywords,
+      version: sourcePackageJson.version,
+      license: sourcePackageJson.license || "MIT",
+      files: [
+        "LICENSE",
+        "README.md",
+        "index.js",
+        "client.js",
+        "cjs/",
+      ],
+      main: "index.js",
+      exports: {
+        ".": "./index.js",
+        "./client": "./client.js",
         "./package.json": "./package.json",
       },
     };

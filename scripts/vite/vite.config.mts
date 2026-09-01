@@ -10,6 +10,31 @@ const rootDir = path.resolve(import.meta.dirname, "../..");
 export default defineConfig({
   root: path.resolve(rootDir, "fixtures"),
   plugins: [
+    // 对照 rollup 侧 build.js 的 react-dom-hostconfig-fork 插件：reconciler 内部对
+    // HostConfig 用的是相对导入 ./ReactFiberHostConfig，vite 的 resolve.alias 只对裸导入
+    // 生效、对相对导入不生效，所以必须用一个 resolveId 插件拦截（rollup 侧也是同样理由才
+    // 没走 alias 而是自定义插件）。不拦截的话 pnpm dev 会直通 shim 文件、运行时报
+    // "must be shimmed by a specific renderer"。
+    {
+      name: "react-dom-hostconfig-fork",
+      enforce: "pre",
+      resolveId(source, importer) {
+        const reconcilerSrcDir = path
+          .resolve(rootDir, "packages/react-reconciler/src")
+          .replace(/\\/g, "/");
+        if (
+          source === "./ReactFiberHostConfig" &&
+          importer &&
+          importer.replace(/\\/g, "/").startsWith(reconcilerSrcDir + "/")
+        ) {
+          return path.resolve(
+            rootDir,
+            "packages/react-dom/src/client/ReactDOMHostConfig.ts",
+          );
+        }
+        return null;
+      },
+    },
     react(),
     {
       name: "reset-optimize-deps",
@@ -72,12 +97,36 @@ export default defineConfig({
           "packages/react-reconciler/constants.ts",
         ),
       },
+      // 对照 rollup 侧 forks：react-dom 构建时把 reconciler 的 ReactFiberHostConfig 占位模块
+      // fork 替换成 ReactDOMHostConfig。vite 源码调试不走 rollup，靠 alias 做等价 fork，
+      // 且必须排在 react-reconciler/src/* 之前，否则会被下面的正则吞掉。
+      {
+        find: /^react-reconciler\/src\/ReactFiberHostConfig$/,
+        replacement: path.resolve(
+          rootDir,
+          "packages/react-dom/src/client/ReactDOMHostConfig.ts",
+        ),
+      },
+      // reconciler 内部子路径（react-dom 用 react-reconciler/src/... 风格引用），映射到 ts 源码
+      {
+        find: /^react-reconciler\/src\/(.*)$/,
+        replacement: path.resolve(rootDir, "packages/react-reconciler/src/$1.ts"),
+      },
       {
         find: /^react-reconciler$/,
         replacement: path.resolve(
           rootDir,
           "packages/react-reconciler/index.ts",
         ),
+      },
+      // react-dom 的 client 子路径入口需精确匹配在前，避免被 /^react-dom$/ 吞掉
+      {
+        find: "react-dom/client",
+        replacement: path.resolve(rootDir, "packages/react-dom/client.ts"),
+      },
+      {
+        find: /^react-dom$/,
+        replacement: path.resolve(rootDir, "packages/react-dom/index.ts"),
       },
     ],
   },

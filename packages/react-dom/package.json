@@ -1,0 +1,30 @@
+{
+  "name": "react-dom",
+  "description": "React package for working with the DOM.",
+  "version": "1.0.0",
+  "keywords": [
+    "react"
+  ],
+  "main": "npm/index.js",
+  "exports": {
+    ".": "./npm/index.js",
+    "./client": "./npm/client.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/"
+  },
+  "dependencies": {
+    "react": "workspace:*",
+    "react-reconciler": "workspace:*",
+    "shared": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lotosv2010/react-source.git",
+    "directory": "packages/react-dom"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

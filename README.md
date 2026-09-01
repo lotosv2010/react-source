@@ -50,14 +50,14 @@ react-source/
 │   │       ├── ReactFiberCommitWork.ts # commit mutation（插入/更新/删除）
 │   │       ├── ReactFiberWorkLoop.ts   # 调度入口 + workLoop + commit 总控（同步）
 │   │       ├── ReactFiberClassUpdateQueue.ts # 更新队列（Update 循环链表）
-│   │       ├── ReactFiberHostConfig.ts # HostConfig 接口（setHostConfig 运行时注入）
+│   │       ├── ReactFiberHostConfig.ts # HostConfig 接口（构建时 fork 注入）
 │   │       ├── ReactFiberLane.ts       # Lane 优先级模型（当前仅 SyncLane）
 │   │       ├── ReactFiberRoot.ts       # FiberRootNode / createFiberRoot
 │   │       ├── ReactFiberFlags.ts      # 副作用标记位掩码
 │   │       ├── ReactFiberReconciler.ts # 对外入口（createContainer/updateContainer）
 │   │       └── ...                     # WorkTags/RootTags/TypeOfMode 等常量
 │   │
-│   ├── react-dom/             # DOM 渲染器（待搭建）
+│   ├── react-dom/             # DOM 渲染器（简版 createRoot 已搭建）
 │   └── scheduler/             # 调度器（时间切片、优先级）（待搭建）
 │
 ├── scripts/                   # 构建脚本
@@ -69,7 +69,7 @@ react-source/
 │       └── vite.config.mts    # fixtures 源码调试配置（alias 到 packages 源码）
 │
 ├── fixtures/                  # 源码调试演示页（pnpm dev）
-│   ├── main.tsx               # 入口（当前仅 console.log 验证 JSX）
+│   ├── main.tsx               # 入口（JSX 验证 + react-dom 驱动 reconciler 演示）
 │   ├── index.html
 │   └── jsx/
 │       └── index.tsx          # JSX Demo 组件
