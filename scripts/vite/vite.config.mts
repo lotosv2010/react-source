@@ -97,16 +97,6 @@ export default defineConfig({
           "packages/react-reconciler/constants.ts",
         ),
       },
-      // 对照 rollup 侧 forks：react-dom 构建时把 reconciler 的 ReactFiberHostConfig 占位模块
-      // fork 替换成 ReactDOMHostConfig。vite 源码调试不走 rollup，靠 alias 做等价 fork，
-      // 且必须排在 react-reconciler/src/* 之前，否则会被下面的正则吞掉。
-      {
-        find: /^react-reconciler\/src\/ReactFiberHostConfig$/,
-        replacement: path.resolve(
-          rootDir,
-          "packages/react-dom/src/client/ReactDOMHostConfig.ts",
-        ),
-      },
       // reconciler 内部子路径（react-dom 用 react-reconciler/src/... 风格引用），映射到 ts 源码
       {
         find: /^react-reconciler\/src\/(.*)$/,
