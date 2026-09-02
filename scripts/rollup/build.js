@@ -37,6 +37,18 @@ function getFilename(bundle, type) {
   return `${bundle.name}.${suffix}.js`;
 }
 
+// 对照官方 scripts/rollup/build.js 的 handleRollupWarning：reconciler 内部
+// ReactFiberClassUpdateQueue ↔ ReactFiberWorkLoop ↔ ReactFiberBeginWork 存在循环引用
+// （与官方源码一致）。ES 模块下这些 import 都是运行时才调用的函数引用，不存在模块
+// 初始化期访问导致的 TDZ 问题，因此与官方一样直接忽略该告警，其余告警照常打印。
+function handleRollupWarning(warning) {
+  if (warning.code === "CIRCULAR_DEPENDENCY") {
+    // Ignored
+  } else if (typeof warning.code === "string") {
+    console.warn(warning.message);
+  }
+}
+
 async function buildBundle(bundle, type) {
   // 对照官方：__DEV__ 是构建时常量，dev 产物里为 true（保留校验/警告代码），
   // prod 产物里替换成 false 后交给 terser 做 dead code elimination 删掉这些分支。
@@ -45,6 +57,7 @@ async function buildBundle(bundle, type) {
   const inputOptions = {
     input: path.resolve(process.cwd(), bundle.entry),
     external: bundle.externals || [],
+    onwarn: handleRollupWarning,
     plugins: [
       // 对照官方 scripts/rollup/forks.js：react-dom 构建时把 reconciler 的 ReactFiberHostConfig
       // 占位模块 fork 替换成 ReactDOMHostConfig。只对 react-dom bundle 生效，reconciler 自身仍以
