@@ -151,12 +151,15 @@
 #### 5.3 核心 Hooks 实现
 
 - **useState**：mountState / updateState / dispatchSetState（创建 update、加入 queue、调度更新）
+- **useReducer**：mountReducer / updateReducer（useState 是其特例实现，共用同一套更新队列逻辑）
 - **useEffect**：mountEffect / updateEffect（deps 对比、标记 Passive flag）
   - commit 阶段异步执行 flushPassiveEffects：先执行 destroy 清理，再执行 create，缓存 destroy
   - 补 commitRoot 的 before-mutation / layout 子阶段（Passive effect 的调度入口）
+- **useLayoutEffect**：mountLayoutEffect / updateLayoutEffect（deps 对比、标记 Layout flag，在 commit layout 子阶段同步执行 destroy/create）
 - **useRef**：mountRef 创建 { current: initialValue }
 - **useMemo / useCallback**：对比 deps，变化则重算，否则返回缓存值
 - **useTransition**：startTransition 把更新标记为 TransitionLane，返回 isPending
+- **useDeferredValue**：延迟渲染次要更新，配合 TransitionLane / Suspense 使用
 
 #### 5.4 调试方式（第三种）
 
@@ -251,7 +254,14 @@
 - **lazy**：动态 import 组件，配合 Suspense 实现代码分割（需补 REACT_LAZY_TYPE）
 - **Portal**：createPortal 将子树渲染到其他 DOM 节点（需补 HostPortal 的 commit 空壳分支）
 
-#### 9.3 性能优化策略
+#### 9.3 错误边界与异常处理
+
+- **ErrorBoundary**：class 组件实现 getDerivedStateFromError / componentDidCatch
+- **捕获与回退**：render / lifecycle / commit 抛错 → 沿 return 链向上找最近的错误边界 Fiber → 标记 DidCapture → 渲染 fallback
+- **unwind 恢复流程**：completeUnitOfWork 的 Incomplete 分支（与 Suspense 共用同一套渲染中断回退机制）
+- **retry**：错误边界捕获后重新渲染（重置 DidCapture → 重走 render 阶段）
+
+#### 9.4 性能优化策略
 
 - **eagerState**：dispatchSetState 时若 state 不变则提前 bailout，跳过整次调度（基础 bailout 已实现，eagerState 是 dispatch 侧优化）
 - **React.memo / useMemo / useCallback**：与 bailout 联动的 props 浅比较（见 9.2 / Phase 5.3）
