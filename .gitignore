@@ -10,3 +10,7 @@ build
 packages/*/npm/cjs
 packages/*/npm/umd
 *.tsbuildinfo
+
+
+# codegraph
+.codegraph/

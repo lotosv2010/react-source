@@ -38,7 +38,7 @@ react-source/
 │   │       ├── ReactElement.ts         # ReactElement 工厂和经典 createElement 实现
 │   │       └── ReactSharedInternals.ts # React 内部共享状态（聚合 CurrentOwner 等）
 │   │
-│   ├── react-reconciler/      # 协调器（Fiber、diff、commit）（同步主链路已搭建）
+│   ├── react-reconciler/      # 协调器（Fiber、diff、commit、Lane、可中断 workLoop）
 │   │   ├── index.ts                    # 主入口（转出 createContainer/updateContainer 等）
 │   │   ├── constants.ts                # 常量入口（转出 LegacyRoot/ConcurrentRoot）
 │   │   ├── reflection.ts               # Fiber 树反射入口（findCurrentHostFiber 等）
@@ -48,31 +48,52 @@ react-source/
 │   │       ├── ReactFiberBeginWork.ts  # beginWork（递阶段，按 tag 分发）
 │   │       ├── ReactFiberCompleteWork.ts # completeWork（归阶段，创建 DOM + bubbleProperties）
 │   │       ├── ReactFiberCommitWork.ts # commit mutation（插入/更新/删除）
-│   │       ├── ReactFiberWorkLoop.ts   # 调度入口 + workLoop + commit 总控（同步）
-│   │       ├── ReactFiberClassUpdateQueue.ts # 更新队列（Update 循环链表）
+│   │       ├── ReactFiberWorkLoop.ts   # 调度入口 + 可中断 workLoop（sync + concurrent）+ commit 总控
+│   │       ├── ReactFiberClassUpdateQueue.ts # 更新队列（Update 循环链表，按 lane 消费）
 │   │       ├── ReactFiberHostConfig.ts # HostConfig 接口（构建时 fork 注入）
-│   │       ├── ReactFiberLane.ts       # Lane 优先级模型（当前仅 SyncLane）
+│   │       ├── ReactFiberLane.ts       # 完整 Lane 优先级模型（30 条 lane 位表）
 │   │       ├── ReactFiberRoot.ts       # FiberRootNode / createFiberRoot
 │   │       ├── ReactFiberFlags.ts      # 副作用标记位掩码
 │   │       ├── ReactFiberReconciler.ts # 对外入口（createContainer/updateContainer）
+│   │       ├── ReactFiberTreeReflection.ts # Fiber 树反射（getNearestMountedFiber/findCurrentHostFiber）
+│   │       ├── ReactEventPriorities.ts # 事件优先级 → lane 映射
 │   │       └── ...                     # WorkTags/RootTags/TypeOfMode 等常量
 │   │
 │   ├── react-dom/             # DOM 渲染器（简版 createRoot 已搭建）
-│   └── scheduler/             # 调度器（时间切片、优先级）（待搭建）
+│   │   ├── index.ts / client.ts        # npm 分发入口（转出 ReactDOMClient）
+│   │   └── src/client/
+│   │       ├── ReactDOMRoot.ts         # createRoot(container).render() 包装 FiberRootNode
+│   │       ├── ReactDOMClient.ts       # createRoot 工厂函数
+│   │       └── ReactDOMHostConfig.ts   # DOM HostConfig 实现（createInstance/appendChild 等）
+│   │
+│   └── scheduler/             # 调度器（时间切片、优先级，对照官方完整结构已搭建）
+│       ├── index.ts                    # 主入口（转出 Scheduler）
+│       └── src/
+│           ├── Scheduler.ts            # unstable_scheduleCallback/shouldYield 等 + taskQueue/timerQueue
+│           ├── SchedulerMinHeap.ts     # 最小堆（按 sortIndex 排序）
+│           ├── SchedulerPriorities.ts  # 5 档优先级常量
+│           ├── SchedulerHostConfig.ts  # 占位接口（构建时 fork 注入）
+│           └── forks/SchedulerHostConfig.default.ts # MessageChannel 宏任务 + 5ms 时间片实现
 │
 ├── scripts/                   # 构建脚本
 │   ├── rollup/
-│   │   ├── build.js           # Rollup 打包入口
-│   │   ├── bundles.js         # bundle 描述（react/reconciler 等包的打包配置）
+│   │   ├── build.js           # Rollup 打包入口（含 HostConfig fork 注入）
+│   │   ├── bundles.js         # bundle 描述（react/reconciler/react-dom/scheduler 等打包配置）
 │   │   └── packaging.js       # 打包辅助
 │   └── vite/
-│       └── vite.config.mts    # fixtures 源码调试配置（alias 到 packages 源码）
+│       └── vite.config.mts    # fixtures 源码调试配置（alias 到 packages 源码 + HostConfig fork）
+│
+├── docs/                      # 项目文档
+│   ├── roadmap.md             # 实现路线图（按 Phase 划分的已完成/待实现清单）
+│   └── react-core.md          # React 核心原理笔记（分层架构/Fiber/Lane/Diff/Hooks 等 + Mermaid 流程图）
 │
 ├── fixtures/                  # 源码调试演示页（pnpm dev）
 │   ├── main.tsx               # 入口（JSX 验证 + react-dom 驱动 reconciler 演示）
 │   ├── index.html
-│   └── jsx/
-│       └── index.tsx          # JSX Demo 组件
+│   ├── jsx/                   # JSX Demo 组件
+│   ├── dom/                   # react-dom createRoot 渲染演示
+│   ├── reconciler/            # reconciler 同步主链路演示（mount/update/diff）
+│   └── scheduler/             # scheduler 时间切片 + 并发渲染 + flushSync 抢占演示
 │
 ├── .husky/                    # Git hooks（pre-commit、commit-msg）
 ├── eslint.config.js           # ESLint 配置
@@ -96,10 +117,25 @@ babel automatic runtime 实际使用的 JSX 工厂实现，通过 `ReactSharedIn
 **packages/shared/globals.d.ts**  
 声明构建时注入的全局常量（`__DEV__`），实际值由 Rollup 的 `@rollup/plugin-replace` 在打包时替换。
 
+**packages/react-reconciler/src/ReactFiberWorkLoop.ts**  
+调度与渲染总控：`scheduleUpdateOnFiber` → `ensureRootIsScheduled`（按 lane 选同步微任务或 `scheduler.scheduleCallback` 分片）→ `workLoopSync`/`workLoopConcurrent` → `commitRoot`；`flushSync` 走同步队列。
+
+**packages/react-reconciler/src/ReactFiberHostConfig.ts**  
+平台无关的宿主环境接口占位模块（对齐官方 `forks/ReactFiberHostConfig.custom.js`），构建时被 react-dom 的 `ReactDOMHostConfig` fork 替换。
+
+**packages/react-dom/src/client/ReactDOMHostConfig.ts**  
+DOM 平台的 HostConfig 实现：`createInstance`/`createTextInstance`、`appendChild`/`insertBefore`/`removeChild`、`prepareUpdate`/`commitUpdate` 等。
+
+**packages/scheduler/src/Scheduler.ts**  
+调度器主循环：`unstable_scheduleCallback`/`unstable_shouldYield`/`unstable_now` 等导出，taskQueue/timerQueue 双最小堆管理任务过期时间。
+
 ## 常用命令
 
 ```bash
 pnpm install
+
+# fixtures 源码调试（浏览器查看渲染效果）
+pnpm dev
 
 # lint
 pnpm lint
@@ -115,6 +151,11 @@ npx tsc --noEmit
 # 构建（输出 cjs / esm / iife 三种产物）
 pnpm build
 ```
+
+## 文档
+
+- [docs/roadmap.md](./docs/roadmap.md) — 实现路线图，按 React 18 渲染主链路自然顺序划分 Phase，记录已完成/待实现清单
+- [docs/react-core.md](./docs/react-core.md) — React 核心原理笔记：分层架构、Fiber/Lane/UpdateQueue 数据结构、beginWork/completeWork/commit/Diff/调度接入等核心流程，每个知识点配 Mermaid 流程图
 
 ## 提交规范
 
