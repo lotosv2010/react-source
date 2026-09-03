@@ -160,6 +160,14 @@
 - **useMemo / useCallback**：对比 deps，变化则重算，否则返回缓存值
 - **useTransition**：startTransition 把更新标记为 TransitionLane，返回 isPending
 - **useDeferredValue**：延迟渲染次要更新，配合 TransitionLane / Suspense 使用
+- **useSyncExternalStore**：commit 后同步校验外部 store 快照是否一致（tearing 检测），不一致则强制同步重渲染，是外部状态库适配并发特性的标准方案
+- **useId**：基于组件树挂载路径生成跨 SSR/CSR 一致的唯一 id，依赖 Phase 4 未涉及的 treeContext（forkStack/idStack），Phase 9 做 hydrate 时一并补齐
+
+#### 5.3.1 ReactFiberConcurrentUpdates（并发更新入队）
+
+- `packages/react-reconciler/src/ReactFiberConcurrentUpdates.ts`（官方同名文件，Phase 4 接入 Scheduler 时暂未还原，Hooks 落地时一起补）
+  - `enqueueConcurrentHookUpdate` / `enqueueConcurrentClassUpdate`：并发渲染期间的 update 先记录到一个全局队列，而非直接挂到 fiber 上，避免渲染中的 fiber 树被并发事件污染
+  - `finishQueueingConcurrentUpdates`：commit 前统一把暂存的 update 刷回各自 fiber 的 updateQueue，并同时把 lane 冒泡到 root（对应本项目当前 `markUpdateLaneFromFiberToRoot` 的即时冒泡，Hooks 阶段需要切到这套延迟入队模型）
 
 #### 5.4 调试方式（第三种）
 
@@ -206,10 +214,16 @@
 
 ### Phase 7: Context API
 
+#### 7.0 ReactFiberStack（通用栈基础设施）
+
+- `packages/react-reconciler/src/ReactFiberStack.ts`（官方同名文件，Context/legacy context/host context 共用这一套通用栈）
+  - `createCursor` / `push` / `pop`：以 `renderLanes` 无关的方式在 render 阶段栈式保存/恢复某个值，`pop` 时机由子树是否遍历完毕决定（对应 completeWork 归的时机）
+  - Context 的 `pushProvider`/`popProvider`（7.1）就是这套栈的具体应用之一，不是 Context 专属机制
+
 #### 7.1 createContext / Provider / Consumer / useContext
 
 - createContext(defaultValue) → { Provider, Consumer, _currentValue }
-- Provider 组件：beginWork 时将 value 压入栈（pushProvider）
+- Provider 组件：beginWork 时将 value 压入栈（pushProvider，基于 7.0 的通用栈）
 - 消费：函数组件 useContext(Context)，class 组件 contextType / Consumer
 
 #### 7.2 context 变化时的传播与 bailout 兼容
@@ -240,10 +254,18 @@
 
 ### Phase 9: 其他核心 API + 性能优化
 
+#### 9.0 ReactFiberThrow / ReactFiberUnwindWork（unwind 地基）
+
+- `packages/react-reconciler/src/ReactFiberThrow.ts`（官方 ReactFiberThrow.old.js）
+  - `throwException`：render 阶段捕获到 throw（Promise 或普通 Error）后，沿 `return` 链向上找最近的 Suspense/错误边界 Fiber，标记 `ShouldCapture`
+- `packages/react-reconciler/src/ReactFiberUnwindWork.ts`（官方 ReactFiberUnwindWork.old.js）
+  - `unwindWork`：completeUnitOfWork 的 Incomplete 分支调用，沿路径向上清理未完成的栈（context/host context 等 `pop`），找到 `ShouldCapture` 的边界后转 `DidCapture`，从该节点重新进入 beginWork 渲染 fallback/错误 UI
+  - 这套机制是 Suspense（9.1）与错误边界（9.3）共用的同一地基，不是各自独立实现
+
 #### 9.1 Suspense 完整实现
 
-- 捕获 Promise throw，显示 fallback，Promise resolve 后重新渲染
-- **unwind 流程**：渲染中断后的回退（completeUnitOfWork 的 Incomplete 分支当前留空，需补齐）
+- 捕获 Promise throw，显示 fallback，Promise resolve 后重新渲染（依赖 9.0 的 unwind 地基）
+- **OffscreenComponent**：`packages/react-reconciler/src/ReactFiberOffscreenComponent.ts`（官方 ReactFiberOffscreenComponent.old.js）—— Suspense 用它包裹主内容并隐藏，保留 Fiber 状态不销毁，等 Promise resolve 后可以直接恢复而不是重新挂载；需补 ReactWorkTags 的 OffscreenComponent tag
 - **use（试验性 hook）**：Suspense 的触发入口
 - 补 ReactSymbols 的 REACT_SUSPENSE_TYPE、ReactWorkTags 的 SuspenseComponent 等
 
@@ -257,14 +279,23 @@
 #### 9.3 错误边界与异常处理
 
 - **ErrorBoundary**：class 组件实现 getDerivedStateFromError / componentDidCatch
-- **捕获与回退**：render / lifecycle / commit 抛错 → 沿 return 链向上找最近的错误边界 Fiber → 标记 DidCapture → 渲染 fallback
-- **unwind 恢复流程**：completeUnitOfWork 的 Incomplete 分支（与 Suspense 共用同一套渲染中断回退机制）
+- **捕获与回退**：render / lifecycle / commit 抛错 → throwException（9.0）沿 return 链向上找最近的错误边界 Fiber → 标记 DidCapture → unwindWork（9.0）渲染 fallback
 - **retry**：错误边界捕获后重新渲染（重置 DidCapture → 重走 render 阶段）
 
 #### 9.4 性能优化策略
 
 - **eagerState**：dispatchSetState 时若 state 不变则提前 bailout，跳过整次调度（基础 bailout 已实现，eagerState 是 dispatch 侧优化）
 - **React.memo / useMemo / useCallback**：与 bailout 联动的 props 浅比较（见 9.2 / Phase 5.3）
+
+---
+
+### Phase 10: Hydrate / Legacy render（当前明确不做，仅记录范围）
+
+> Lane 表里已经铺了 `SyncHydrationLane`/`InputContinuousHydrationLane`/`DefaultHydrationLane`/`SelectiveHydrationLane`/`IdleHydrationLane` 五条 hydration lane（对齐官方位表），但本项目 react-dom 简版目前只有 `createRoot`，没有 `hydrateRoot`/`ReactDOM.render`（legacy）。列出来是为了明确这是有意搁置，而不是遗漏：
+
+- **hydrateRoot**：SSR 场景下复用已有 DOM 而非新建，需要 `getIsHydrating`/`tryToClaimNextHydratableInstance` 等一整套匹配已有 DOM 节点的逻辑（`ReactFiberHydrationContext.ts`）
+- **legacy render（ReactDOM.render）**：LegacyRoot 模式，更新恒为 SyncLane，行为上更接近 React 17（无并发特性），本项目 ReactRootTags 已有 LegacyRoot 占位但未接入
+- **selective hydration**：并发模式下 hydration 与交互事件的优先级协调（用户点击未 hydrate 完的区域时优先 hydrate 该部分）
 
 ---
 

@@ -136,7 +136,7 @@ graph LR
 
 ```mermaid
 graph LR
-    A["bit0<br/>SyncLane"] --- B["bit1<br/>SyncHydrationLane"] --- C["bit5<br/>InputContinuousLane"] --- D["bit6~21<br/>DefaultLane × N"] --- E["bit22~26<br/>TransitionLane × 16"] --- F["bit27~30<br/>RetryLane × 5"] --- G["Idle"] --- H["Offscreen"]
+    A["bit0<br/>SyncLane"] --- B["bit1~2<br/>InputContinuousLane<br/>(+Hydration变体)"] --- C["bit3~4<br/>DefaultLane<br/>(+Hydration变体)"] --- D["bit5~21<br/>TransitionLane × 16<br/>(+Hydration变体)"] --- E["bit22~26<br/>RetryLane × 5"] --- F["bit27<br/>SelectiveHydrationLane"] --- G["bit28~29<br/>IdleLane<br/>(+Hydration变体)"] --- H["bit30<br/>OffscreenLane"]
 ```
 
 lanes 是 31 位二进制位，数值越小优先级越高，可用位运算合并/比较多个更新的优先级。一个 update 被分配到某个 lane，多个 update 可以合并处理（`mergeLanes`）；高优先级 lane 到来时可以打断正在进行的低优先级渲染。低优先级区段分配更多位数（如 TransitionLane 占 16 位），是因为低优先级更新更容易被打断积压，需要更多"批次"区分先后到达的更新。
@@ -176,11 +176,19 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["beginWork(current, workInProgress)"] --> B{didReceiveUpdate?}
-    B -->|否| C["bailoutOnAlreadyFinishedWork<br/>跳过，克隆子Fiber直接返回"]
-    B -->|是| D["按 tag 分发：<br/>HostRoot → reconcileChildren（根据ReactElement）<br/>HostComponent → 处理children，reconcileChildren<br/>FunctionComponent → renderWithHooks执行函数得到children<br/>Fragment → 直接处理children"]
-    D --> E["reconcileChildren（diff算法，见3.5）<br/>标记 Placement/Update/ChildDeletion"]
-    E --> F[返回第一个子Fiber，workLoop继续往下走]
+    A["beginWork(current, workInProgress, renderLanes)"] --> B{"current !== null？<br/>（mount / update）"}
+    B -->|mount| M["didReceiveUpdate = false<br/>（IndeterminateComponent 走 mountIndeterminateComponent 定型）"]
+    B -->|update| C{"oldProps !== newProps<br/>|| legacy context 变化？"}
+    C -->|是| D["didReceiveUpdate = true"]
+    C -->|否| E["checkScheduledUpdateOrContext<br/>该 fiber 上有无落在 renderLanes 内的待处理更新"]
+    E -->|无，且无 DidCapture| F["didReceiveUpdate = false<br/>attemptEarlyBailoutIfNoScheduledUpdate<br/>克隆子Fiber直接返回，不进入下面的 tag 分发"]
+    E -->|有| G["didReceiveUpdate = false<br/>（若 updateQueue/context 真正产生新值会置回 true）"]
+    M --> H["workInProgress.lanes = NoLanes（清空待处理优先级）"]
+    D --> H
+    G --> H
+    H --> I["按 tag 分发：<br/>HostRoot → reconcileChildren（根据ReactElement）<br/>HostComponent → 处理children，reconcileChildren<br/>FunctionComponent → renderWithHooks执行函数得到children<br/>Fragment → 直接处理children"]
+    I --> J["reconcileChildren（diff算法，见3.5）<br/>标记 Placement/Update/ChildDeletion"]
+    J --> K[返回第一个子Fiber，workLoop继续往下走]
 ```
 
 - 源码：[packages/react-reconciler/src/ReactFiberBeginWork.old.js](https://github.com/facebook/react/blob/v18.2.0/packages/react-reconciler/src/ReactFiberBeginWork.old.js)
@@ -204,13 +212,22 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["commitRoot(root)"] --> B["① commitBeforeMutationEffects<br/>getSnapshotBeforeUpdate"]
-    B --> C["② commitMutationEffects（核心：真正操作DOM）<br/>Placement → insertOrAppendPlacementNode（找宿主锚点插入）<br/>Update → commitUpdate / commitTextUpdate<br/>ChildDeletion → 递归卸载子树，触发effect清理<br/>（ref相关：commitDetachRef 先于删除执行）"]
-    C --> D["③ commitLayoutEffects<br/>componentDidMount/DidUpdate<br/>commitAttachRef（此时DOM已挂载，才能拿到真实节点赋给ref）"]
-    D --> E["root.current = finishedWork<br/>切根，双缓存完成整体替换"]
+    Z["commitRootImpl(root)"] --> Z0["先 flushPassiveEffects()<br/>清掉上一轮遗留的 useEffect，<br/>避免旧 effect 影响本次 commit"]
+    Z0 --> A["① commitBeforeMutationEffects<br/>getSnapshotBeforeUpdate"]
+    A --> C["② commitMutationEffects（核心：真正操作DOM）<br/>Placement → insertOrAppendPlacementNode（找宿主锚点插入）<br/>Update → commitUpdate / commitTextUpdate<br/>ChildDeletion → 递归卸载子树，触发effect清理<br/>（ref相关：commitDetachRef 先于删除执行）"]
+    C --> Cur["root.current = finishedWork<br/>此时切根！（不是最后一步）"]
+    Cur --> D["③ commitLayoutEffects<br/>componentDidMount/DidUpdate<br/>commitAttachRef（此时DOM已挂载，才能拿到真实节点赋给ref）"]
+    D --> P["有 Passive flag（useEffect）？"]
+    P -->|有| S["scheduleCallback(NormalPriority, flushPassiveEffects)<br/>异步安排下一轮统一执行 destroy→create"]
+    P -->|无| End[commit 结束]
+    S --> End
 ```
 
+**为什么 `root.current = finishedWork` 切在 mutation 之后、layout 之前**：必须晚于 mutation，因为 `componentWillUnmount` 等卸载逻辑要读到"旧树仍是 current"；必须早于 layout，因为 `componentDidMount`/`componentDidUpdate` 需要读到"新树已经是 current"。
+
 **ref 的处理时机**：ref 赋值（`commitAttachRef`）发生在 layout 子阶段，因为只有 mutation 阶段把 DOM 操作做完之后，才能拿到真实的 DOM 节点或组件实例；卸载时 `commitDetachRef` 则先于节点删除执行，避免 ref 指向一个已被移除的节点。`forwardRef` 把父组件传入的 ref 转发给内部某个子节点；`useImperativeHandle` 可以自定义暴露给外部 ref 的内容，而不是直接暴露 DOM 节点或组件实例本身。
+
+**useEffect 为什么是异步的**：commit 阶段发现有 Passive effect 时不会同步执行，而是 `scheduleCallback` 交给 Scheduler 在下一轮宏任务/正常优先级时机再跑；下一次 commit 开始时会先 `flushPassiveEffects` 兜底执行掉上一轮没跑完的，保证 effect 不会跨越两次渲染乱序执行。
 
 - 源码：[packages/react-reconciler/src/ReactFiberCommitWork.old.js](https://github.com/facebook/react/blob/v18.2.0/packages/react-reconciler/src/ReactFiberCommitWork.old.js)
 - 源码（forwardRef）：[packages/react/src/ReactForwardRef.js](https://github.com/facebook/react/blob/v18.2.0/packages/react/src/ReactForwardRef.js)
@@ -247,14 +264,19 @@ flowchart TD
     D --> E{是SyncLane?}
     E -->|是| F["scheduleSyncCallback → 微任务flushSyncCallbacks<br/>→ renderRootSync（不可中断）"]
     E -->|否| G["lanesToEventPriority(lanes) 映射到 Scheduler 优先级"]
-    G --> H["scheduler.unstable_scheduleCallback(priority, performConcurrentWorkOnRoot)"]
+    G --> H["originalCallbackNode = root.callbackNode<br/>scheduler.unstable_scheduleCallback(priority, performConcurrentWorkOnRoot)<br/>返回的 newCallbackNode 存回 root.callbackNode"]
     H --> I["performConcurrentWorkOnRoot → renderRootConcurrent → workLoopConcurrent<br/>每处理一个Fiber就检查 shouldYield()"]
-    I -->|true，中断| J[把控制权交还浏览器，之后重新调度续跑]
-    I -->|false| K[继续 performUnitOfWork]
-    K --> L["render完成 → commitRoot（同步不可中断）"]
+    I -->|shouldYield=true，中断| J["renderRootConcurrent 返回 RootInProgress<br/>（workInProgressRoot/renderLanes 原样保留，不清空）"]
+    I -->|渲染完成| K["render完成 → commitRoot（同步不可中断）"]
+    J --> N["performConcurrentWorkOnRoot 末尾再调一次 ensureRootIsScheduled(root)"]
+    N --> O{"root.callbackNode === originalCallbackNode？<br/>（没被更高优先级的调度顶掉）"}
+    O -->|是| P["return performConcurrentWorkOnRoot.bind(null, root)<br/>作为 continuation 交还给 Scheduler"]
+    O -->|否，被顶掉| Q[return null，本次任务结束]
+    P --> R["Scheduler 在下一个时间片直接调用这个 continuation<br/>（不是重新从头调度，是同一个任务的延续）"]
+    R --> I
 ```
 
-**中断后如何恢复**：不是恢复 JS 调用栈，而是保留 workInProgressRoot 上已完成的部分，重新调度后从 root 重新走一遍 `beginWork`（已完成且无更新的节点走 bailout 跳过，不重复计算）。
+**中断后如何恢复**：不是恢复 JS 调用栈，而是保留 `workInProgressRoot`/`workInProgressRootRenderLanes` 上已完成的部分。真正驱动"续跑"的机制是 Scheduler 的 continuation 协议：`performConcurrentWorkOnRoot` 每次执行完都返回自身的 `bind`（只要调度节点没被更高优先级任务顶替），Scheduler 收到函数返回值发现是函数，就在下一个时间片直接调用它，而不是重新走一遍 `ensureRootIsScheduled` 的调度决策。真正重新调度只发生在 `root.callbackNode !== originalCallbackNode`（说明中途被更高优先级更新打断顶替）的情况下。`renderRootConcurrent` 重新进入时，若 `workInProgressRoot === root && workInProgressRootRenderLanes === lanes` 就跳过 `prepareFreshStack`，直接从上次中断的 `workInProgress` 指针继续 `beginWork`（已完成且无更新的节点走 bailout 跳过，不重复计算）。
 
 - 源码：[packages/react-reconciler/src/ReactFiberWorkLoop.old.js](https://github.com/facebook/react/blob/v18.2.0/packages/react-reconciler/src/ReactFiberWorkLoop.old.js)
 - 源码（Scheduler 主循环）：[packages/scheduler/src/forks/Scheduler.js](https://github.com/facebook/react/blob/v18.2.0/packages/scheduler/src/forks/Scheduler.js)
