@@ -1,46 +1,70 @@
 # React 核心主线
 
-本文档梳理 React 18 的核心渲染主线，帮助在实现过程中始终对照官方架构，理解各模块之间的关系。
+本文档按「框架设计思想 → 核心数据结构 → 核心流程（含子流程） → 其他高频知识点 → 参考资料」梳理 React 18 的实现原理，只讲 React 本身，不涉及本项目的实现进度，每个知识点配一张简化流程图，方便记忆和面试复述。
 
-## 一句话概括
+## 一、框架设计思想
 
-React 的渲染主线是：**JSX 描述 UI → 生成 Fiber 树（协调/diff）→ 生成副作用列表 → commit 到真实 DOM**。整个过程围绕 **Fiber** 这一数据结构展开，调度器负责决定"什么时候做"，协调器负责决定"要做什么"，渲染器负责决定"怎么落地到具体平台"。
-
-## 分层架构
+### 1.1 分层架构：四层解耦
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  React 核心 API（packages/react）                          │
-│  createElement / jsx / Component / hooks 入口（useState等） │
-│  只负责描述"要渲染什么"，不关心"怎么渲染"                        │
-└─────────────────────────────────────────────────────────┘
-                          │ ReactElement（虚拟 DOM 描述）
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│  协调器（packages/react-reconciler）                        │
-│  Fiber 树构建、diff 算法、优先级调度接入、commit 副作用应用       │
-│  平台无关，通过 HostConfig 接口与具体渲染器解耦                  │
-└─────────────────────────────────────────────────────────┘
-                          │ HostConfig（createInstance/appendChild等）
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│  渲染器（packages/react-dom / react-native 等）              │
-│  实现 HostConfig，把 Fiber 的变更落地到具体平台                 │
-│  react-dom → 操作浏览器 DOM API                             │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ React 核心 API (packages/react)           │  只描述"渲染什么"
+│ createElement / jsx / Component / hooks入口│
+└─────────────────────────────────────────┘
+              │ ReactElement
+              ▼
+┌─────────────────────────────────────────┐
+│ Reconciler (packages/react-reconciler)    │  平台无关，Fiber树构建+diff+调度接入
+│ beginWork / completeWork / commit         │
+└─────────────────────────────────────────┘
+              │ HostConfig（createInstance/appendChild...）
+              ▼
+┌─────────────────────────────────────────┐
+│ 渲染器 (react-dom / react-native...)      │  把变更落地到具体平台
+└─────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────┐
-│  调度器（packages/scheduler）                                │
-│  独立于 React，通用的任务调度库（优先级 + 时间切片）               │
-│  被 reconciler 用来决定何时执行渲染任务、能否被中断              │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│ Scheduler (packages/scheduler)            │  通用调度库，不感知Fiber
+│ 决定"什么时候做"，reconciler决定"做什么"    │
+└─────────────────────────────────────────┘
 ```
 
-**关键设计**：reconciler 与渲染器解耦（HostConfig 抹平平台差异），reconciler 与 scheduler 解耦（scheduler 是通用调度库，不感知 Fiber）。这是 React 能同时支持 DOM/Native/自定义渲染器的架构基础。
+**为什么这样分层**：reconciler 与渲染器之间用 HostConfig 解耦 → 一套 diff 算法可以对接 DOM/Native/自定义渲染器；reconciler 与 scheduler 解耦 → 调度能力可以独立演进（甚至被其他项目复用），reconciler 只需要"lane → 优先级"的桥接。
 
-## 核心概念
+### 1.2 虚拟 DOM 的本质
 
-### 1. ReactElement —— UI 的静态描述
+```
+JSX ──createElement──▶ ReactElement树（虚拟DOM）
+                              │ 不是为了"比原生快"
+                              │ 而是：①跨平台抽象 ②把命令式DOM操作
+                              │        变成可批量/可中断的声明式描述
+                              ▼
+                        Fiber树（可中断的工作单元）
+                              │ diff 得到"最小变更集合"
+                              ▼
+                        真实 DOM（一次性 commit）
+```
+
+### 1.3 render 阶段 vs commit 阶段
+
+|          | render 阶段                              | commit 阶段                                      |
+| -------- | ---------------------------------------- | ------------------------------------------------ |
+| 做什么   | 构建 workInProgress Fiber 树，标记副作用 | 把副作用应用到真实 DOM                           |
+| 能否中断 | 能（并发模式下可被打断，之后恢复或重来） | 不能（必须同步跑完，否则用户看到中间状态）       |
+| 核心函数 | beginWork（递）/ completeWork（归）      | commitBeforeMutation/commitMutation/commitLayout |
+
+```
+render 阶段（可中断）              commit 阶段（不可中断）
+┌────────────┐                  ┌───────────────────────┐
+│ beginWork↓ │──完成子树后──▶   │ before mutation        │
+│ completeWork↑│               │ mutation（真正操作DOM） │
+└────────────┘                  │ layout（DOM变更后）     │
+                                 └───────────────────────┘
+```
+
+## 二、核心数据结构
+
+### 2.1 ReactElement —— UI 的静态描述
 
 ```ts
 {
@@ -48,104 +72,325 @@ React 的渲染主线是：**JSX 描述 UI → 生成 Fiber 树（协调/diff）
 }
 ```
 
-- 由 `createElement`/`jsx` 产出，是不可变的普通对象（DEV 下会 `Object.freeze`）
-- 只是"描述"，不包含任何实例状态，每次 render 都会重新创建
-- 对应本项目 `packages/react/src/ReactElement.ts`
+由 `createElement`/`jsx` 产出的不可变普通对象（DEV 下 `Object.freeze`），只是"描述"不含实例状态，每次 render 都重新创建。
 
-### 2. Fiber —— 可中断工作单元 + 实例状态载体
+### 2.2 Fiber —— 可中断工作单元 + 实例状态载体
 
-Fiber 是 React 16 引入的核心数据结构，取代了 React 15 的递归 Stack Reconciler。每个 ReactElement 对应一个 Fiber 节点，Fiber 节点组成一棵树（通过 `child`/`sibling`/`return` 指针，而非数组，这样才能做到可中断后精确恢复）。
-
-```ts
+```
 FiberNode {
-  tag,              // 节点类型：HostComponent/FunctionComponent/ClassComponent...
-  type,             // 对应 ReactElement.type
-  key, ref, props,
-  stateNode,        // 对应的真实实例：DOM 节点 / class 组件实例 / FiberRoot
-  return,           // 指向父 Fiber
-  child, sibling,   // 指向第一个子 Fiber / 下一个兄弟 Fiber
-  alternate,        // 指向双缓存树中对应的另一棵树的节点（current ↔ workInProgress）
-  flags,            // 副作用标记：Placement/Update/Deletion...
-  memoizedState,    // 上次渲染的 state（函数组件是 Hook 链表，class 组件是 this.state）
-  updateQueue,      // 待处理的更新队列
+  tag, type, key, ref, props,     // 对应 ReactElement
+  stateNode,                       // 真实实例：DOM节点/class实例/FiberRoot
+  return, child, sibling,          // 树形指针（非数组，才能中断后精确恢复）
+  alternate,                       // 指向双缓存树中对应的另一棵树的节点
+  flags, subtreeFlags,             // 副作用标记：Placement/Update/Deletion...
+  memoizedState,                   // 函数组件=Hook链表，class组件=this.state
+  updateQueue,                     // 待处理更新队列
+  lanes, childLanes,                // 本节点/子树的优先级
 }
 ```
 
-**为什么用链表而非递归**：Stack Reconciler 用递归遍历树，一旦开始无法中断（JS 调用栈无法从中间恢复）。Fiber 用链表模拟调用栈，每处理完一个节点就把进度保存在 Fiber 上，可以随时中断、把控制权交还浏览器、之后再从中断点继续 —— 这是实现"时间切片"的前提。
+```
+        FiberRoot
+            │ current
+            ▼
+         HostRoot Fiber
+            │ child
+            ▼
+      ┌───────────┐   sibling   ┌───────────┐
+      │  Fiber A  │────────────▶│  Fiber B  │
+      └───────────┘             └───────────┘
+            │ child                    return↑
+            ▼
+      ┌───────────┐
+      │  Fiber A1 │
+      └───────────┘
+```
 
-**双缓存**：同一时刻存在两棵 Fiber 树：
+**为什么用链表而非递归**：Stack Reconciler 递归遍历树一旦开始无法中断（JS 调用栈无法从中间恢复）。Fiber 用 child/sibling/return 链表模拟调用栈，把"处理进度"存在节点上，可以随时中断、把控制权交还浏览器，之后再从中断点继续——这是"时间切片"的前提。
 
-- `current`：对应当前屏幕上显示的内容
-- `workInProgress`：正在构建的新树
+### 2.3 双缓存树（current / workInProgress）
 
-两棵树通过 `alternate` 指针互相引用，构建完成后直接替换根指针（`current = workInProgress`），而不是逐节点替换 DOM，这样即使渲染中途出错也不会影响已显示的内容。
+```
+     current 树（屏幕上显示的）        workInProgress 树（正在构建的）
+     ┌─────────┐  alternate  ┌─────────┐
+     │ Fiber   │◀───────────▶│ Fiber   │
+     └─────────┘             └─────────┘
+          ▲                       │
+          │      构建完成后         │
+          └──────整体切根───────────┘
+          FiberRoot.current = workInProgress
+```
 
-对应本项目 `packages/react-reconciler/src/ReactFiber.ts`（已实现）。
+两棵树通过 `alternate` 指针互相引用，构建完成后直接切换根指针，而不是逐节点替换 DOM——即使渲染中途出错也不会影响已显示的内容。
 
-### 3. render 阶段 vs commit 阶段
+### 2.4 Lane —— 优先级模型
 
-React 的一次更新分两大阶段：
+```
+lanes: 31位二进制位
+bit0  bit1        bit5      bit6~21        bit22~26  bit27~30
+Sync  SyncHydration InputCont Default×N   Transition×16  Retry×5  Idle  Offscreen
+（数值越小优先级越高，可用位运算合并/比较多个更新的优先级）
+```
 
-|          | render 阶段                                  | commit 阶段                                       |
-| -------- | -------------------------------------------- | ------------------------------------------------- |
-| 做什么   | 构建 workInProgress Fiber 树，标记副作用     | 把副作用应用到真实 DOM                            |
-| 能否中断 | 能（并发模式下可被打断，之后重新开始或恢复） | 不能（必须同步执行完，否则用户会看到不一致的 UI） |
-| 核心函数 | beginWork（向下）/ completeWork（向上）      | commitMutationEffects 等                          |
-| 产出     | 带 flags 标记的 Fiber 树                     | 更新后的真实 DOM                                  |
+一个 update 被分配到某个 lane，多个 update 可以合并处理（`mergeLanes`）；高优先级 lane 到来时可以打断正在进行的低优先级渲染。
 
-**render 阶段的两个子阶段**（对每个 Fiber 节点）：
+### 2.5 UpdateQueue —— 更新队列
 
-- **beginWork**（递，向下）：根据新的 props/state 决定这个节点要渲染成什么，创建/复用子 Fiber
-  - HostComponent（如 `<div>`）→ 处理 children，创建子 Fiber
-  - FunctionComponent → 执行函数得到 children
-  - 通过 diff 算法（reconcileChildren）对比新旧子节点，标记 Placement/Update/Deletion
-- **completeWork**（归，向上）：子树处理完后，为当前节点做收尾
-  - HostComponent → 创建/更新真实 DOM 节点（但不挂到文档上）
-  - 把子树的副作用标记向上冒泡收集（bubbleProperties），最终在根节点形成完整的副作用链
+```
+fiber.updateQueue.shared.pending
+        │
+        ▼
+   Update ──next──▶ Update ──next──▶ Update ──┐
+        ▲                                      │
+        └──────────────循环链表────────────────┘
+```
 
-**commit 阶段的三个子阶段**：
+`enqueueUpdate` 把新 update 接入循环链表，`processUpdateQueue` 在 render 阶段按 lane 优先级依次消费、算出 `memoizedState`，跳过的低优先级 update 保留在 baseUpdate 链上等下次重新计算。
 
-1. **before mutation**：DOM 变更前（如 class 组件的 getSnapshotBeforeUpdate）
-2. **mutation**：真正操作 DOM（根据 flags 执行 appendChild/removeChild/更新属性）
-3. **layout**：DOM 变更后（如 class 组件的 componentDidMount/DidUpdate，ref 赋值）
+## 三、核心流程
 
-### 4. 调度与优先级（Lane 模型）
+### 3.1 主链路总览
 
-不同来源的更新有不同的紧迫程度：
+```
+createElement()             生成 ReactElement
+      │
+scheduleUpdateOnFiber()     标记更新，冒泡lane到root
+      │
+ensureRootIsScheduled()     按lane选：同步微任务 or scheduler.scheduleCallback
+      │
+┌─────▼─────────────────────────────┐
+│ render阶段（可中断）                 │
+│  prepareFreshStack                 │
+│  workLoopSync / workLoopConcurrent │
+│    performUnitOfWork               │
+│      beginWork（递）                │
+│      completeUnitOfWork（归）       │
+└─────┬─────────────────────────────┘
+      │ 产出：带flags标记的Fiber树
+commitRoot()
+      │
+┌─────▼─────────────┐
+│ commit阶段（不可中断）│
+│  before mutation    │
+│  mutation            │
+│  layout              │
+└────────────────────┘
+      │
+真实 DOM 更新完成
+```
 
-- 用户直接交互（点击、输入）→ 需要同步或高优先级响应
-- 数据请求返回后的更新 → 可以稍后处理
-- `useTransition` 标记的过渡更新 → 优先级最低，可被打断
+### 3.2 子流程：beginWork（递）
 
-React 用 **Lane**（31 位二进制位）表示优先级，每个更新会被分配到某个 lane，多个更新可以合并处理。高优先级更新到来时，会打断正在进行的低优先级渲染，优先处理紧急的。
+```
+beginWork(current, workInProgress)
+      │
+   didReceiveUpdate?  ── 否 ──▶ bailoutOnAlreadyFinishedWork（跳过，克隆子Fiber直接返回）
+      │ 是
+      ▼
+  按 tag 分发：
+  HostRoot      → reconcileChildren(根据ReactElement)
+  HostComponent → 处理children，reconcileChildren
+  FunctionComponent → renderWithHooks执行函数得到children
+  Fragment      → 直接处理children
+      │
+      ▼
+  reconcileChildren（diff算法，见3.5）标记 Placement/Update/ChildDeletion
+      │
+      ▼
+  返回第一个子Fiber（workLoop继续往下走）
+```
 
-Scheduler（独立包）不理解 Lane，只提供通用的"按优先级执行回调，且可被打断"的能力（内部用 `MessageChannel` 模拟宏任务，配合 `shouldYield` 判断是否让出主线程）。reconciler 把 Lane 映射到 Scheduler 的优先级常量，桥接两者。
+### 3.3 子流程：completeWork（归）
 
-### 5. Hooks 的本质
+```
+completeWork(current, workInProgress)
+      │
+  按 tag 分发：
+  HostComponent → 首次挂载：createInstance + appendAllChildren（构建离屏DOM子树）
+                → 更新：prepareUpdate生成updatePayload，标记Update flag
+  HostText      → 首次挂载：createTextInstance
+                → 更新：updateHostText
+      │
+      ▼
+  bubbleProperties：把子树的 flags/lanes 向上冒泡汇总到 subtreeFlags
+      │
+      ▼
+  有 sibling？──有──▶ 转去处理 sibling（继续 beginWork）
+      │ 无
+      ▼
+  返回 return（父节点），父节点继续 completeWork
+```
 
-Hooks 不是魔法，本质是：
+### 3.4 子流程：commit 三个子阶段
 
-- **链表**：一个函数组件对应的 Fiber 上挂一条 Hook 链表（`fiber.memoizedState`），`useState`/`useEffect` 等每次调用按顺序对应链表上的一个节点
-- **约定**：Hooks 调用顺序必须稳定（不能在条件/循环中调用），因为 React 是靠"第几次调用"而非变量名去对应链表节点的 —— 这也是为什么不能在条件语句中调用 Hooks
-- **Dispatcher 切换**：`useState` 等函数本身只是转发调用给 `ReactCurrentDispatcher.current.useState`，mount 和 update 阶段指向不同的实现（mountState 创建节点，updateState 复用节点算新值），组件重渲染时通过切换 dispatcher 区分行为
+```
+commitRoot(root)
+      │
+① commitBeforeMutationEffects
+      （getSnapshotBeforeUpdate）
+      │
+② commitMutationEffects          ← 核心：真正操作DOM
+      │  按 flags 分发：
+      │  Placement     → insertOrAppendPlacementNode（找宿主锚点插入）
+      │  Update        → commitUpdate / commitTextUpdate
+      │  ChildDeletion → 递归卸载子树，触发effect清理
+      │
+③ commitLayoutEffects
+      （componentDidMount/DidUpdate、ref赋值）
+      │
+      ▼
+  root.current = finishedWork（切根，双缓存完成整体替换）
+```
 
-## 本项目当前进度
+### 3.5 子流程：Diff 算法（reconcileChildren）
 
-对照 [roadmap.md](./roadmap.md)，当前已实现：
+```
+reconcileChildren(current, workInProgress, nextChildren)
+      │
+  新children是单个ReactElement？
+      │ 是 ──▶ reconcileSingleElement
+      │        key相同且type相同 → 复用；否则删旧建新（整棵子树重建）
+      │ 否（数组）
+      ▼
+  reconcileChildrenArray（多节点diff，两轮遍历）
+      │
+  第一轮：顺序遍历新旧children，key+type都相同则复用并原地更新
+      │   一旦遇到key不同 → 跳出第一轮
+      ▼
+  第二轮：
+    - 新children还有剩余，旧children已空 → 全部新建（mount）
+    - 旧children还有剩余，新children已空 → 全部标记删除
+    - 都有剩余 → 用Map(key→oldFiber)查找可复用节点，
+                 用 lastPlacedIndex 判断是否需要移动（Placement）
+```
 
-- **最上层（JSX → ReactElement）**：`packages/react` 的 createElement/jsx/jsxDEV + jsx-runtime/jsx-dev-runtime 入口，架构图中 "React 核心 API" 这一层已完成。
-- **reconciler 主链路（同步路径）**：`packages/react-reconciler` 已具备 Fiber 数据结构、双缓存、更新队列、beginWork/completeWork、commit mutation、单/多节点 diff、Fragment、单 lane 模型，以及**构建时 fork 注入**的 HostConfig 接口。
-- **渲染器层（简版）**：`packages/react-dom` 已落地 `createRoot().render()` 同步渲染，DOM HostConfig 通过构建时 fork 注入 reconciler。
+**为什么不建议用 index 当 key**：增删/排序场景下 index 会随位置变化，导致本该复用的节点被错误标记为需要更新/删错节点。
 
-尚未落地（也是下一步方向）：
+### 3.6 子流程：调度接入（Scheduler + Lane 桥接）
 
-- **渲染器层（剩余）**：react-dom 还只有简版（不含 hydrate / legacy render / 事件系统 / DOMPropertyOperations 完整体系），完整渲染器随后续 Phase 补齐。
-- **调度器层**：`scheduler` 尚未创建，workLoop 目前是同步一口气跑完（单 SyncLane），还没有时间切片 / 完整 Lane 模型 / 优先级抢占。
-- **Hooks 层**：`ReactFiberHooks` 尚未创建，函数组件的 renderWithHooks 是占位实现（直接调用 Component），还没有 useState/useEffect 等。
+```
+scheduleUpdateOnFiber(fiber, lane)
+      │
+markRootUpdated(root, lane)      root.pendingLanes |= lane
+      │
+ensureRootIsScheduled(root)
+      │
+getNextLanes(root)                取当前最高优先级的lane集合
+      │
+  是SyncLane？
+      │ 是 ──▶ scheduleSyncCallback → 微任务flushSyncCallbacks → renderRootSync（不可中断）
+      │ 否
+      ▼
+  lanesToEventPriority(lanes) 映射到 Scheduler 优先级
+      │
+  scheduler.unstable_scheduleCallback(priority, performConcurrentWorkOnRoot)
+      │
+performConcurrentWorkOnRoot
+      │
+  renderRootConcurrent → workLoopConcurrent
+      │   每处理一个Fiber就检查 shouldYield()
+      │   true → 中断，把控制权交还浏览器，之后重新调度续跑
+      │   false → 继续 performUnitOfWork
+      ▼
+  render完成 → commitRoot（同步不可中断）
+```
 
-即：架构图中"协调器"这一层的主链路已经打通，但"渲染器"和"调度器"两层还是空的，"协调器"与它们对接的部分（ensureRootIsScheduled、可中断 workLoop、并发更新状态计算）也随之后续补齐。详细分 Phase 进度见 [roadmap.md](./roadmap.md)。
+**中断后如何恢复**：不是恢复 JS 调用栈，而是保留 workInProgressRoot 上已完成的部分，重新调度后从 root 重新走一遍 `beginWork`（已完成且无更新的节点走 bailout 跳过，不重复计算）。
 
-## 参考资料
+## 四、其他高频知识点
+
+### 4.1 Hooks 原理
+
+```
+FunctionComponent渲染
+      │
+renderWithHooks
+      │
+  mount？──是──▶ ReactCurrentDispatcher.current = HooksDispatcherOnMount
+      │ 否（update）
+      ▼        ReactCurrentDispatcher.current = HooksDispatcherOnUpdate
+      │
+  执行函数组件，函数体内每次调用 useXxx()
+      │           实际转发给 dispatcher.useXxx
+      ▼
+  按调用顺序在 fiber.memoizedState 上挂/取 Hook链表节点：
+  Hook{ memoizedState, queue, next } → Hook{...} → Hook{...}
+```
+
+- 是"链表"：调用顺序必须稳定，因为 React 靠"第几次调用"而非变量名对应链表节点——这是不能在条件/循环中调用 Hooks 的根本原因
+- `useEffect`（Passive，commit后异步执行，不阻塞绘制） vs `useLayoutEffect`（Layout，commit的layout子阶段同步执行，可读最新布局但会阻塞）
+- `useMemo`/`useCallback` 用 `Object.is` 浅比较 deps，本质是"用空间换时间"
+- 闭包陷阱：每次渲染都是全新函数调用和全新变量作用域，`useEffect` 里拿到的是创建那次渲染的 state 快照
+
+### 4.2 批处理与并发特性（React 18 新增）
+
+```
+事件回调 / setTimeout / Promise 中多次 setState
+      │
+  React18: 统一走 batchedUpdates（不区分是否合成事件回调）
+      │
+  多个update都enqueue，但只ensureRootIsScheduled一次
+      │
+  本次批次结束 → 统一走一次render+commit（只重渲染一次）
+```
+
+- `useTransition`/`useDeferredValue`：本质是给这次更新分配一个更低优先级的 TransitionLane，不是"延迟执行"而是"允许被高优先级更新打断"
+- `Suspense`：渲染中抛出 Promise → 被最近的 Suspense 边界捕获 → 显示 fallback → Promise resolve 后重新渲染该子树（unwind流程）
+
+### 4.3 组件与生命周期
+
+```
+class组件更新流程与Fiber阶段对应：
+  shouldComponentUpdate      → beginWork（可用于bailout跳过）
+  getDerivedStateFromProps   → beginWork
+  render                     → beginWork
+  getSnapshotBeforeUpdate    → commit before mutation
+  componentDidMount/Update   → commit layout
+```
+
+- `PureComponent`/`React.memo`：浅比较 props/state，等价于自动生成的 `shouldComponentUpdate`
+- Error Boundary：`getDerivedStateFromError`/`componentDidCatch` 在 commit 阶段捕获渲染错误，**无法**捕获事件处理函数里的错误（那是普通 try/catch 的范畴）
+
+### 4.4 Context 跨层通信
+
+```
+Provider(value) beginWork时 pushProvider(context, value) 压栈
+      │
+子树消费方 useContext(context) / class.contextType
+      │  读取 context._currentValue
+      │  同时把当前fiber记录到 context的订阅链表（dependencies）
+      │
+Provider的value变化
+      │
+propagateContextChange：遍历订阅链表，标记订阅者的lane
+      │  未订阅该context的子树 → bailout跳过，不重新渲染
+      ▼
+只有订阅了该context的Fiber才会重新render
+```
+
+### 4.5 事件系统
+
+```
+createRoot(container)
+      │
+  在container上注册合成事件监听（一次性，委托）listenToAllSupportedEvents
+      │
+原生事件触发（例如click冒泡到container）
+      │
+dispatchEvent
+      │
+  从event.target向上收集Fiber路径（getEventTarget → 沿return找HostComponent）
+      │
+  按路径模拟捕获（从根到target）→ 冒泡（从target到根）
+      │  依次调用收集到的onClick/onClickCapture等props回调
+      ▼
+  回调内的setState → 走批处理（4.2），不会立即触发多次渲染
+```
+
+- 合成事件（SyntheticEvent）包装原生 event，抹平浏览器差异，同时和 Fiber 的优先级/批处理机制打通
+- 事件委托：所有事件统一绑定在 root 容器上，而非每个 DOM 节点单独绑定，节省内存
+
+## 五、参考资料
 
 - React 官方仓库：https://github.com/facebook/react
 - Fiber 架构设计文档（React 团队）：https://github.com/acdlite/react-fiber-architecture
