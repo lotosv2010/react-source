@@ -63,7 +63,10 @@ react-source/
 │   │   ├── index.ts / client.ts        # npm 分发入口（转出 ReactDOMClient）
 │   │   └── src/client/
 │   │       ├── ReactDOMClient.ts       # 转出层（对照官方，还会挂 findDOMNode/DevTools 等）
-│   │       ├── ReactDOMRoot.ts         # createRoot 工厂函数 + ReactDOMRoot（render 包装 FiberRootNode）
+│   │       └── ReactDOMRoot.ts         # createRoot 工厂函数 + ReactDOMRoot（render 包装 FiberRootNode）
+│   │
+│   ├── react-dom-bindings/    # DOM 平台绑定（供 react-dom 等渲染器共享，对齐官方 react-dom-bindings）
+│   │   └── src/client/
 │   │       └── ReactDOMHostConfig.ts   # DOM HostConfig 实现（createInstance/appendChild 等）
 │   │
 │   └── scheduler/             # 调度器（时间切片、优先级，对照官方完整结构已搭建）
@@ -121,10 +124,10 @@ babel automatic runtime 实际使用的 JSX 工厂实现，通过 `ReactSharedIn
 调度与渲染总控：`scheduleUpdateOnFiber` → `ensureRootIsScheduled`（按 lane 选同步微任务或 `scheduler.scheduleCallback` 分片）→ `workLoopSync`/`workLoopConcurrent` → `commitRoot`；`flushSync` 走同步队列。
 
 **packages/react-reconciler/src/ReactFiberConfig.ts**  
-平台无关的宿主环境接口占位模块（对齐官方 `ReactFiberConfig.js` / `forks/ReactFiberConfig.custom.js`），构建时被 react-dom 的 `ReactDOMHostConfig` fork 替换。
+平台无关的宿主环境接口占位模块（对齐官方 `ReactFiberConfig.js` / `forks/ReactFiberConfig.custom.js`），构建时被 react-dom-bindings 的 `ReactDOMHostConfig` fork 替换。
 
-**packages/react-dom/src/client/ReactDOMHostConfig.ts**  
-DOM 平台的 HostConfig 实现：`createInstance`/`createTextInstance`、`appendChild`/`insertBefore`/`removeChild`、`prepareUpdate`/`commitUpdate` 等。
+**packages/react-dom-bindings/src/client/ReactDOMHostConfig.ts**  
+DOM 平台的 HostConfig 实现（对齐官方独立的 `react-dom-bindings` 包，供 react-dom 等渲染器共享）：`createInstance`/`createTextInstance`、`appendChild`/`insertBefore`/`removeChild`、`prepareUpdate`/`commitUpdate` 等。
 
 **packages/scheduler/src/Scheduler.ts**  
 调度器主循环：`unstable_scheduleCallback`/`unstable_shouldYield`/`unstable_now` 等导出，taskQueue/timerQueue 双最小堆管理任务过期时间。

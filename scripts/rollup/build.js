@@ -10,8 +10,25 @@ const terser = require("@rollup/plugin-terser");
 
 const { bundles, bundleTypes } = require("./bundles");
 const { prepareNpmPackages } = require("./packaging");
+const { wrapWithReconcilerModule } = require("./wrappers");
 
 const { NODE_DEV, NODE_PROD, UMD_DEV, UMD_PROD } = bundleTypes;
+
+// 对照官方 scripts/shared/inlinedHostConfigs.js：每个渲染器 entry 对应一个 shortName，
+// forks.js 据此把 ReactFiberConfig 占位模块替换成 forks/ReactFiberConfig.<shortName>。
+// 本项目只有 react-dom 这一个真实渲染器 + standalone react-reconciler 自身（发布给
+// 第三方渲染器用，fork 到 'custom'，运行时通过 $$$config 参数注入，见 forks/ReactFiberConfig.custom.ts
+// 和 wrappers.js 的 wrapWithReconcilerModule）。reflection/constants 两个 reconciler
+// 子入口不会触达 ReactFiberConfig，故落入 null，resolveId 直接放行交回默认解析。
+function getHostConfigShortName(bundle) {
+  if (bundle.packageName === "react-dom") {
+    return "dom";
+  }
+  if (bundle.name === "react-reconciler") {
+    return "custom";
+  }
+  return null;
+}
 
 function isProduction(type) {
   return type === NODE_PROD || type === UMD_PROD;
@@ -59,22 +76,26 @@ async function buildBundle(bundle, type) {
     external: bundle.externals || [],
     onwarn: handleRollupWarning,
     plugins: [
-      // 对照官方 scripts/rollup/forks.js：react-dom 构建时把 reconciler 的 ReactFiberConfig
-      // 占位模块 fork 替换成 ReactDOMHostConfig。只对 react-dom bundle 生效，reconciler 自身仍以
-      // shim 打包（对照官方发布形态）。resolveId 返回 null 时交回默认解析，不拦截其他模块。
+      // 对照官方 scripts/rollup/forks.js：把 reconciler 的 ReactFiberConfig 占位模块
+      // fork 替换成 forks/ReactFiberConfig.<shortName>。官方按 entry 在
+      // scripts/shared/inlinedHostConfigs.js 里查 shortName（react-dom → 'dom'，
+      // react-reconciler 自身 → 'custom'），所以那份只有 throw 的占位模块从不进任何 bundle。
+      // 本项目只有一个渲染器，故用 getHostConfigShortName 直接按 moduleType 判定，不铺
+      // inlinedHostConfigs 那张表。resolveId 返回 null 时交回默认解析，不拦截其他模块。
       {
-        name: "react-dom-hostconfig-fork",
+        name: "react-fiberconfig-fork",
         resolveId(source) {
-          if (
-            bundle.packageName === "react-dom" &&
-            source === "./ReactFiberConfig"
-          ) {
-            return path.resolve(
-              process.cwd(),
-              "packages/react-dom/src/client/ReactDOMHostConfig.ts",
-            );
+          if (source !== "./ReactFiberConfig") {
+            return null;
           }
-          return null;
+          const shortName = getHostConfigShortName(bundle);
+          if (shortName === null) {
+            return null;
+          }
+          return path.resolve(
+            process.cwd(),
+            `packages/react-reconciler/src/forks/ReactFiberConfig.${shortName}.ts`,
+          );
         },
       },
       // 对照官方 forks.js：scheduler 构建时把 SchedulerHostConfig 占位模块 fork 替换成
@@ -117,6 +138,20 @@ async function buildBundle(bundle, type) {
               format: { comments: false },
             }),
           ]),
+      // 对照官方 build.js 的 top-level-definitions 插件（这里只还原 reconciler 分支）：
+      // standalone react-reconciler 产物要在 renderChunk 阶段包成 $$$reconciler($$$config)，
+      // 让第三方渲染器能把 host config 当参数传入。只对主入口生效，reflection/constants
+      // 子入口是纯常量/工具转出，不触达 ReactFiberConfig，不需要包裹。
+      ...(bundle.name === "react-reconciler"
+        ? [
+            {
+              name: "wrap-reconciler-module",
+              renderChunk(source) {
+                return wrapWithReconcilerModule(source, isDev);
+              },
+            },
+          ]
+        : []),
     ],
   };
 

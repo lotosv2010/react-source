@@ -12,7 +12,10 @@ import {
   type OpaqueRoot,
 } from "react-reconciler/src/ReactFiberReconciler";
 import { ConcurrentRoot } from "react-reconciler/src/ReactRootTags";
-import { setRootHostContainer, type Container } from "./ReactDOMHostConfig";
+import {
+  setRootHostContainer,
+  type Container,
+} from "react-dom-bindings/src/client/ReactDOMHostConfig";
 
 export interface RootType {
   render(children: any): void;

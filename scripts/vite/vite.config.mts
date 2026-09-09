@@ -29,7 +29,7 @@ export default defineConfig({
         ) {
           return path.resolve(
             rootDir,
-            "packages/react-dom/src/client/ReactDOMHostConfig.ts",
+            "packages/react-reconciler/src/forks/ReactFiberConfig.dom.ts",
           );
         }
         return null;
@@ -139,6 +139,14 @@ export default defineConfig({
       {
         find: "react-dom/client",
         replacement: path.resolve(rootDir, "packages/react-dom/client.ts"),
+      },
+      // react-dom-bindings 子路径（react-dom 用 react-dom-bindings/src/... 风格引用），映射到 ts 源码
+      {
+        find: /^react-dom-bindings\/src\/(.*)$/,
+        replacement: path.resolve(
+          rootDir,
+          "packages/react-dom-bindings/src/$1.ts",
+        ),
       },
       {
         find: /^react-dom$/,

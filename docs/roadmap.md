@@ -69,11 +69,11 @@
 
 - [x] **HostConfig 接口**（`ReactFiberConfig.ts`）
   - 平台无关接口，**构建时 fork 注入**（对齐官方 `ReactFiberConfig.js` / forks/ReactFiberConfig.custom.js）
-  - 占位模块每个导出都 throw，react-dom 构建时把它替换成 `ReactDOMHostConfig`（reconciler 自身仍以 shim 打包）
+  - 占位模块模块加载时即 throw，react-dom-bindings 构建时把它替换成 `ReactDOMHostConfig`（reconciler 自身仍以 shim 打包）
 
 - [x] **react-dom 简版**（`packages/react-dom`）
   - `createRoot(container).render(element)`：ReactDOMClient（转出层）→ ReactDOMRoot（createRoot 实现），底层走 reconciler 的 createContainer/updateContainer
-  - DOM HostConfig（`ReactDOMHostConfig.ts`）：createInstance/createTextInstance、className/style/普通属性子集、prepareUpdate/commitUpdate、appendChild/insertBefore/removeChild 等
+  - DOM HostConfig（`packages/react-dom-bindings/src/client/ReactDOMHostConfig.ts`，对齐官方独立的 react-dom-bindings 包）：createInstance/createTextInstance、className/style/普通属性子集、prepareUpdate/commitUpdate、appendChild/insertBefore/removeChild 等
   - npm 分发文件夹 + rollup 构建产物（cjs dev/prod），bundles.js 注册 react-dom bundle，build.js fork 注入 HostConfig
   - 简版边界：不含 hydrate / legacy render / 事件系统 / shouldSetTextContent 优化 / DOMPropertyOperations 完整体系，留待后续 Phase
 
@@ -305,6 +305,7 @@
 - 对照文件路径：
   - react 核心：`packages/react/src/`
   - react-dom：`packages/react-dom/src/`
+  - react-dom-bindings：`packages/react-dom-bindings/src/`
   - reconciler：`packages/react-reconciler/src/`
   - scheduler：`packages/scheduler/src/`
 

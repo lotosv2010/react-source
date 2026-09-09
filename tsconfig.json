@@ -26,6 +26,7 @@
         "./packages/react-reconciler/constants.ts"
       ],
       "react-reconciler/src/*": ["./packages/react-reconciler/src/*"],
+      "react-dom-bindings/src/*": ["./packages/react-dom-bindings/src/*"],
       "scheduler": ["./packages/scheduler/index.ts"],
       "scheduler/src/*": ["./packages/scheduler/src/*"]
     }
