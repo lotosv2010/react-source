@@ -1,17 +1,25 @@
 /**
  * @file HostConfig（渲染器与平台无关接口的占位实现）
  * @description reconciler 通过这组接口与具体渲染器（如 react-dom）解耦。官方在本文件里直接
- * throw，真正的实现由各渲染器在构建时通过 fork 注入（forks/ReactFiberConfig.custom.js
- * 把 react-dom 的 ReactDOMHostConfig 替换进本模块）。本项目对齐官方：本文件每个导出都 throw，
- * 一旦 rollup 的 fork 配置失效、误用了这份兜底实现，会立刻报错而非静默出错。
+ * throw，真正的实现由各渲染器在构建时通过 fork 注入（rollup 把本模块替换成
+ * forks/ReactFiberConfig.dom.ts，后者 re-export react-dom-bindings 的 ReactDOMHostConfig）。
+ * 本项目对齐官方：模块加载时立刻 throw，一旦 fork 配置失效、误用了这份兜底实现，会在第一
+ * 时间报错而非等到某个函数被调用才暴露问题。
+ *
+ * 对照官方 packages/react-reconciler/src/ReactFiberConfig.js：官方文件里**只有**这一句
+ * throw，连类型声明都没有——因为官方在类型层也做了 fork：.flowconfig 的 module.name_mapper
+ * 把 ./ReactFiberConfig 映射到 forks 文件，Flow 检查时看到的就是真实实现。
+ *
+ * 本项目用 TS，tsconfig 的 paths 只作用于裸导入、管不了 `./ReactFiberConfig` 这种相对导入，
+ * 类型层无法 fork。若把下面的声明删掉，五处消费方（ReactFiberCommitWork / CompleteWork /
+ * Reconciler / Root / WorkLoop）会直接报 TS2306 "not a module"。所以这些 `declare` 是
+ * TS 移植的必要补充，充当 HostConfig 的类型契约，编译后不产生任何运行时代码。
  */
 
-// 对照官方 packages/react-reconciler/src/ReactFiberConfig.js 里的 Flow 类型：
-// 泛型 renderer 的 Instance/TextInstance/Container/Props/Type 都是抽象类型，由渲染器具体化。
-// 这里用 any 兜底（与仓库 ReactTypes.ts 的 ElementType 处理一致）。官方在渲染器侧（如
-// ReactFiberConfigDOM.js）会把 Container 具体化成 Element/Document/DocumentFragment 的联合类型，
-// 本项目占位模块本身不该被直接使用，仍保留 any，具体类型收窄放到 react-dom 侧的 ReactDOMHostConfig。
+throw new Error("This module must be shimmed by a specific renderer.");
 
+// 泛型 renderer 的 Instance/TextInstance/Container/Props/Type 都是抽象类型，由渲染器具体化，
+// 这里用 any 兜底（与仓库 ReactTypes.ts 的 ElementType 处理一致）。
 export type Instance = any;
 export type TextInstance = any;
 export type Container = any;
@@ -21,139 +29,99 @@ export type Props = Record<string, any>;
 // updatePayload 是 [key1, value1, key2, value2, ...] 的扁平数组，commitUpdate 按这个约定消费
 export type UpdatePayload = any[];
 
-function throwIncompatibleHost(): never {
-  throw new Error(
-    "This module must be shimmed by a specific renderer. " +
-      "react-dom 构建时通过 fork 把 ReactDOMHostConfig 替换进本模块；" +
-      "直接引用本占位模块说明 fork 配置失效。",
-  );
-}
+// 下面这些 `declare` 只充当 HostConfig 的类型契约，编译后不产生任何运行时代码——
+// 真正的实现由构建时 fork 注入（forks/ReactFiberConfig.dom.ts / .custom.ts）。
+export declare const supportsMutation: boolean;
+export declare const supportsPersistence: boolean;
 
-export const supportsMutation = true;
-export const supportsPersistence = false;
+export declare function createInstance(
+  type: Type,
+  props: Props,
+  rootContainerInstance: Container,
+  hostContext: any,
+  internalInstanceHandle: any,
+): Instance;
 
-export function createInstance(
-  _type: Type,
-  _props: Props,
-  _rootContainerInstance: Container,
-  _hostContext: any,
-  _internalInstanceHandle: any,
-): Instance {
-  throwIncompatibleHost();
-}
+export declare function createTextInstance(
+  text: string,
+  rootContainerInstance: Container,
+  hostContext: any,
+  internalInstanceHandle: any,
+): TextInstance;
 
-export function createTextInstance(
-  _text: string,
-  _rootContainerInstance: Container,
-  _hostContext: any,
-  _internalInstanceHandle: any,
-): TextInstance {
-  throwIncompatibleHost();
-}
+export declare function appendInitialChild(
+  parentInstance: Instance,
+  child: Instance | TextInstance,
+): void;
 
-export function appendInitialChild(
-  _parentInstance: Instance,
-  _child: Instance | TextInstance,
-): void {
-  throwIncompatibleHost();
-}
+export declare function finalizeInitialChildren(
+  instance: Instance,
+  type: Type,
+  props: Props,
+  rootContainerInstance: Container,
+  hostContext: any,
+): boolean;
 
-export function finalizeInitialChildren(
-  _instance: Instance,
-  _type: Type,
-  _props: Props,
-  _rootContainerInstance: Container,
-  _hostContext: any,
-): boolean {
-  throwIncompatibleHost();
-}
+export declare function prepareUpdate(
+  instance: Instance,
+  type: Type,
+  oldProps: Props,
+  newProps: Props,
+  rootContainerInstance: Container,
+  hostContext: any,
+): UpdatePayload | null;
 
-export function prepareUpdate(
-  _instance: Instance,
-  _type: Type,
-  _oldProps: Props,
-  _newProps: Props,
-  _rootContainerInstance: Container,
-  _hostContext: any,
-): UpdatePayload | null {
-  throwIncompatibleHost();
-}
+export declare function commitUpdate(
+  instance: Instance,
+  updatePayload: UpdatePayload,
+  type: Type,
+  oldProps: Props,
+  newProps: Props,
+  internalInstanceHandle: any,
+): void;
 
-export function commitUpdate(
-  _instance: Instance,
-  _updatePayload: UpdatePayload,
-  _type: Type,
-  _oldProps: Props,
-  _newProps: Props,
-  _internalInstanceHandle: any,
-): void {
-  throwIncompatibleHost();
-}
+export declare function commitTextUpdate(
+  textInstance: TextInstance,
+  oldText: string,
+  newText: string,
+): void;
 
-export function commitTextUpdate(
-  _textInstance: TextInstance,
-  _oldText: string,
-  _newText: string,
-): void {
-  throwIncompatibleHost();
-}
+export declare function appendChild(
+  parentInstance: Instance,
+  child: Instance | TextInstance,
+): void;
 
-export function appendChild(
-  _parentInstance: Instance,
-  _child: Instance | TextInstance,
-): void {
-  throwIncompatibleHost();
-}
+export declare function appendChildToContainer(
+  container: Container,
+  child: Instance | TextInstance,
+): void;
 
-export function appendChildToContainer(
-  _container: Container,
-  _child: Instance | TextInstance,
-): void {
-  throwIncompatibleHost();
-}
+export declare function insertBefore(
+  parentInstance: Instance,
+  child: Instance | TextInstance,
+  beforeChild: Instance | TextInstance,
+): void;
 
-export function insertBefore(
-  _parentInstance: Instance,
-  _child: Instance | TextInstance,
-  _beforeChild: Instance | TextInstance,
-): void {
-  throwIncompatibleHost();
-}
+export declare function insertInContainerBefore(
+  container: Container,
+  child: Instance | TextInstance,
+  beforeChild: Instance | TextInstance,
+): void;
 
-export function insertInContainerBefore(
-  _container: Container,
-  _child: Instance | TextInstance,
-  _beforeChild: Instance | TextInstance,
-): void {
-  throwIncompatibleHost();
-}
+export declare function removeChild(
+  parentInstance: Instance,
+  child: Instance | TextInstance,
+): void;
 
-export function removeChild(
-  _parentInstance: Instance,
-  _child: Instance | TextInstance,
-): void {
-  throwIncompatibleHost();
-}
+export declare function removeChildFromContainer(
+  container: Container,
+  child: Instance | TextInstance,
+): void;
 
-export function removeChildFromContainer(
-  _container: Container,
-  _child: Instance | TextInstance,
-): void {
-  throwIncompatibleHost();
-}
+export declare function shouldSetTextContent(type: Type, props: Props): boolean;
 
-export function shouldSetTextContent(_type: Type, _props: Props): boolean {
-  throwIncompatibleHost();
-}
+export declare function getRootHostContainer(): Container;
 
-export function getRootHostContainer(): Container {
-  throwIncompatibleHost();
-}
+export declare function getHostContext(): any;
 
-export function getHostContext(): any {
-  throwIncompatibleHost();
-}
-
-export function scheduleMicrotask(_callback: () => void): void {
-  throwIncompatibleHost();
-}
+export declare function scheduleMicrotask(callback: () => void): void;
