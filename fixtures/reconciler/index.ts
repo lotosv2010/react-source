@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-reconciler/src/ReactFiberWorkLoop";
 
 // 用 react-dom 的 createRoot 驱动 reconciler 的同步主链路（mount → update → diff → commit）
-// 渲染到真实 DOM。HostConfig 由构建时 fork 注入（vite alias 把 ReactFiberHostConfig
+// 渲染到真实 DOM。HostConfig 由构建时 fork 注入（vite alias 把 ReactFiberConfig
 // 替换成 react-dom 的 ReactDOMHostConfig），不再手写 host config 直连 reconciler。
 
 // 演示组件：根据 props.stage 渲染不同结构，覆盖挂载 / 文本更新 / 多节点 diff（删除+移动）

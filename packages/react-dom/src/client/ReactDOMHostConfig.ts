@@ -1,11 +1,17 @@
 /**
  * @file react-dom 的 DOM HostConfig 实现（简版）
  * @description reconciler 通过 HostConfig 与具体渲染器解耦，react-dom 构建时通过 fork
- * 把本模块注入 reconciler（替换掉只抛错的 ReactFiberHostConfig 占位模块）。这里只覆盖
+ * 把本模块注入 reconciler（替换掉只抛错的 ReactFiberConfig 占位模块）。这里只覆盖
  * 同步主链路（挂载/更新/删除）用得到的方法子集，属性处理只做 className/style/普通字符串
  * 属性的简版（事件 on* 暂忽略、dangerouslySetInnerHTML/布尔属性等 DOMPropertyOperations
  * 完整体系留到后续 Phase 再补）。
+ *
+ * 对照官方 ReactFiberConfigDOM.js：Container 官方是 Element | Document | DocumentFragment
+ * 的联合类型（各自可挂 _reactRootContainer）。本项目简版只支持挂载到 Element，不含
+ * document/DocumentFragment 作为根容器，也不挂 _reactRootContainer 引用。
  */
+
+export type Container = Element;
 
 // 属性设置/对比只覆盖主链路用得到的子集（className/style/普通字符串属性），
 // 不是 react-dom DOMPropertyOperations 的完整还原（事件、dangerouslySetInnerHTML、
@@ -85,10 +91,10 @@ function diffProperties(
 // 根容器由 createRoot 在 createContainer 前注入，getRootHostContainer 返回它。
 // createInstance/createTextInstance 通过 rootContainerInstance 取 ownerDocument
 // （对照官方：rootContainerInstance 在 DOM 渲染器里用于创建元素时确定所属文档）。
-let rootContainer: Element = document.documentElement;
+let rootContainer: Container = document.documentElement;
 
 /** 设置根容器（仅 createRoot 内部调用，不进对外 API） */
-export function setRootHostContainer(container: Element): void {
+export function setRootHostContainer(container: Container): void {
   rootContainer = container;
 }
 
@@ -98,7 +104,7 @@ export const supportsPersistence = false;
 export function createInstance(
   type: string,
   props: Record<string, any>,
-  rootContainerInstance: Element,
+  rootContainerInstance: Container,
   _hostContext: unknown,
   _internalInstanceHandle: unknown,
 ): Element {
@@ -110,7 +116,7 @@ export function createInstance(
 
 export function createTextInstance(
   text: string,
-  rootContainerInstance: Element,
+  rootContainerInstance: Container,
   _hostContext: unknown,
   _internalInstanceHandle: unknown,
 ): Text {
@@ -129,7 +135,7 @@ export function finalizeInitialChildren(
   _instance: Element,
   _type: string,
   _props: Record<string, any>,
-  _rootContainerInstance: Element,
+  _rootContainerInstance: Container,
   _hostContext: unknown,
 ): boolean {
   // DOM 渲染器在这里返回 shouldAutoFocusHostComponent（autofocus 等初始副作用），
@@ -142,7 +148,7 @@ export function prepareUpdate(
   _type: string,
   oldProps: Record<string, any>,
   newProps: Record<string, any>,
-  _rootContainerInstance: Element,
+  _rootContainerInstance: Container,
   _hostContext: unknown,
 ): any[] | null {
   return diffProperties(oldProps, newProps);
@@ -179,7 +185,7 @@ export function appendChild(
 }
 
 export function appendChildToContainer(
-  container: Element,
+  container: Container,
   child: Element | Text,
 ): void {
   container.appendChild(child);
@@ -194,7 +200,7 @@ export function insertBefore(
 }
 
 export function insertInContainerBefore(
-  container: Element,
+  container: Container,
   child: Element | Text,
   beforeChild: Element | Text,
 ): void {
@@ -209,7 +215,7 @@ export function removeChild(
 }
 
 export function removeChildFromContainer(
-  container: Element,
+  container: Container,
   child: Element | Text,
 ): void {
   container.removeChild(child);
@@ -224,7 +230,7 @@ export function shouldSetTextContent(
   return false;
 }
 
-export function getRootHostContainer(): Element {
+export function getRootHostContainer(): Container {
   return rootContainer;
 }
 

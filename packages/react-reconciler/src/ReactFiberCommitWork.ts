@@ -15,7 +15,7 @@ import {
   removeChild,
   removeChildFromContainer,
   supportsMutation,
-} from "./ReactFiberHostConfig";
+} from "./ReactFiberConfig";
 import type { Lanes } from "./ReactFiberLane";
 import type { FiberRootNode } from "./ReactFiberRoot";
 import { HostComponent, HostPortal, HostRoot, HostText } from "./ReactWorkTags";

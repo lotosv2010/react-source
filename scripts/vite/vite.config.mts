@@ -11,7 +11,7 @@ export default defineConfig({
   root: path.resolve(rootDir, "fixtures"),
   plugins: [
     // 对照 rollup 侧 build.js 的 react-dom-hostconfig-fork 插件：reconciler 内部对
-    // HostConfig 用的是相对导入 ./ReactFiberHostConfig，vite 的 resolve.alias 只对裸导入
+    // HostConfig 用的是相对导入 ./ReactFiberConfig，vite 的 resolve.alias 只对裸导入
     // 生效、对相对导入不生效，所以必须用一个 resolveId 插件拦截（rollup 侧也是同样理由才
     // 没走 alias 而是自定义插件）。不拦截的话 pnpm dev 会直通 shim 文件、运行时报
     // "must be shimmed by a specific renderer"。
@@ -23,7 +23,7 @@ export default defineConfig({
           .resolve(rootDir, "packages/react-reconciler/src")
           .replace(/\\/g, "/");
         if (
-          source === "./ReactFiberHostConfig" &&
+          source === "./ReactFiberConfig" &&
           importer &&
           importer.replace(/\\/g, "/").startsWith(reconcilerSrcDir + "/")
         ) {
@@ -36,7 +36,7 @@ export default defineConfig({
       },
     },
     // scheduler 内部对 HostConfig 用相对导入 ./SchedulerHostConfig（与 reconciler 的
-    // ReactFiberHostConfig 同理），vite alias 只对裸导入生效，故用 resolveId 插件拦截，
+    // ReactFiberConfig 同理），vite alias 只对裸导入生效，故用 resolveId 插件拦截，
     // 重定向到默认实现（MessageChannel + setTimeout fallback）。
     {
       name: "scheduler-hostconfig-fork",

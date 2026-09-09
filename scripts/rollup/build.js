@@ -59,7 +59,7 @@ async function buildBundle(bundle, type) {
     external: bundle.externals || [],
     onwarn: handleRollupWarning,
     plugins: [
-      // 对照官方 scripts/rollup/forks.js：react-dom 构建时把 reconciler 的 ReactFiberHostConfig
+      // 对照官方 scripts/rollup/forks.js：react-dom 构建时把 reconciler 的 ReactFiberConfig
       // 占位模块 fork 替换成 ReactDOMHostConfig。只对 react-dom bundle 生效，reconciler 自身仍以
       // shim 打包（对照官方发布形态）。resolveId 返回 null 时交回默认解析，不拦截其他模块。
       {
@@ -67,7 +67,7 @@ async function buildBundle(bundle, type) {
         resolveId(source) {
           if (
             bundle.packageName === "react-dom" &&
-            source === "./ReactFiberHostConfig"
+            source === "./ReactFiberConfig"
           ) {
             return path.resolve(
               process.cwd(),

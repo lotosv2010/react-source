@@ -67,8 +67,8 @@
   - Deletion（递归卸载子树）
   - 错误边界 / effect 卸载 / Portal 分支留待后续
 
-- [x] **HostConfig 接口**（`ReactFiberHostConfig.ts`）
-  - 平台无关接口，**构建时 fork 注入**（对齐官方 forks/ReactFiberHostConfig.custom.js）
+- [x] **HostConfig 接口**（`ReactFiberConfig.ts`）
+  - 平台无关接口，**构建时 fork 注入**（对齐官方 `ReactFiberConfig.js` / forks/ReactFiberConfig.custom.js）
   - 占位模块每个导出都 throw，react-dom 构建时把它替换成 `ReactDOMHostConfig`（reconciler 自身仍以 shim 打包）
 
 - [x] **react-dom 简版**（`packages/react-dom`）

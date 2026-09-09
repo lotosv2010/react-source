@@ -15,7 +15,7 @@ import {
   getRootHostContainer,
   prepareUpdate,
   supportsMutation,
-} from "./ReactFiberHostConfig";
+} from "./ReactFiberConfig";
 import { NoLanes, mergeLanes, type Lanes } from "./ReactFiberLane";
 import {
   Fragment,

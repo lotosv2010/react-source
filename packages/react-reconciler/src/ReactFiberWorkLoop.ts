@@ -40,7 +40,7 @@ import {
   setCurrentUpdatePriority,
 } from "./ReactEventPriorities";
 import { ConcurrentMode, NoMode } from "./ReactTypeOfMode";
-import { scheduleMicrotask } from "./ReactFiberHostConfig";
+import { scheduleMicrotask } from "./ReactFiberConfig";
 import {
   unstable_IdlePriority,
   unstable_ImmediatePriority,

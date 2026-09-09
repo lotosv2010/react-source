@@ -9,15 +9,20 @@
 import {
   createContainer,
   updateContainer,
+  type OpaqueRoot,
 } from "react-reconciler/src/ReactFiberReconciler";
-import type { FiberRootNode } from "react-reconciler/src/ReactFiberRoot";
 import { ConcurrentRoot } from "react-reconciler/src/ReactRootTags";
-import { setRootHostContainer } from "./ReactDOMHostConfig";
+import { setRootHostContainer, type Container } from "./ReactDOMHostConfig";
 
-export class ReactDOMRoot {
-  _internalRoot: FiberRootNode;
+export interface RootType {
+  render(children: any): void;
+  _internalRoot: OpaqueRoot;
+}
 
-  constructor(root: FiberRootNode) {
+export class ReactDOMRoot implements RootType {
+  _internalRoot: OpaqueRoot;
+
+  constructor(root: OpaqueRoot) {
     this._internalRoot = root;
   }
 
@@ -32,10 +37,7 @@ export class ReactDOMRoot {
  * @param _options - createRoot 选项（onRecoverableError 等），简版暂未消费
  * @returns ReactDOMRoot
  */
-export function createRoot(
-  container: Element,
-  _options?: unknown,
-): ReactDOMRoot {
+export function createRoot(container: Container, _options?: unknown): RootType {
   // 对照官方：先让 HostConfig 记下根容器（getRootHostContainer 返回它），
   // 再 createContainer 构造 HostRoot fiber。官方用 ConcurrentRoot 作为 createRoot 的根模式。
   setRootHostContainer(container);

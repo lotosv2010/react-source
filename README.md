@@ -50,7 +50,7 @@ react-source/
 │   │       ├── ReactFiberCommitWork.ts # commit mutation（插入/更新/删除）
 │   │       ├── ReactFiberWorkLoop.ts   # 调度入口 + 可中断 workLoop（sync + concurrent）+ commit 总控
 │   │       ├── ReactFiberClassUpdateQueue.ts # 更新队列（Update 循环链表，按 lane 消费）
-│   │       ├── ReactFiberHostConfig.ts # HostConfig 接口（构建时 fork 注入）
+│   │       ├── ReactFiberConfig.ts     # HostConfig 接口（构建时 fork 注入）
 │   │       ├── ReactFiberLane.ts       # 完整 Lane 优先级模型（30 条 lane 位表）
 │   │       ├── ReactFiberRoot.ts       # FiberRootNode / createFiberRoot
 │   │       ├── ReactFiberFlags.ts      # 副作用标记位掩码
@@ -120,8 +120,8 @@ babel automatic runtime 实际使用的 JSX 工厂实现，通过 `ReactSharedIn
 **packages/react-reconciler/src/ReactFiberWorkLoop.ts**  
 调度与渲染总控：`scheduleUpdateOnFiber` → `ensureRootIsScheduled`（按 lane 选同步微任务或 `scheduler.scheduleCallback` 分片）→ `workLoopSync`/`workLoopConcurrent` → `commitRoot`；`flushSync` 走同步队列。
 
-**packages/react-reconciler/src/ReactFiberHostConfig.ts**  
-平台无关的宿主环境接口占位模块（对齐官方 `forks/ReactFiberHostConfig.custom.js`），构建时被 react-dom 的 `ReactDOMHostConfig` fork 替换。
+**packages/react-reconciler/src/ReactFiberConfig.ts**  
+平台无关的宿主环境接口占位模块（对齐官方 `ReactFiberConfig.js` / `forks/ReactFiberConfig.custom.js`），构建时被 react-dom 的 `ReactDOMHostConfig` fork 替换。
 
 **packages/react-dom/src/client/ReactDOMHostConfig.ts**  
 DOM 平台的 HostConfig 实现：`createInstance`/`createTextInstance`、`appendChild`/`insertBefore`/`removeChild`、`prepareUpdate`/`commitUpdate` 等。

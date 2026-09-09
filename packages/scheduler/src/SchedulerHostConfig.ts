@@ -1,6 +1,6 @@
 /**
  * @file SchedulerHostConfig（调度宿主接口的占位实现）
- * @description 与 reconciler 的 ReactFiberHostConfig 同理：本模块每个导出都 throw，真正的
+ * @description 与 reconciler 的 ReactFiberConfig 同理：本模块每个导出都 throw，真正的
  * 实现由构建时 fork 注入（rollup build.js / vite resolveId 把 ./SchedulerHostConfig 重定向到
  * forks/SchedulerHostConfig.default.ts）。一旦 fork 失效误用本兜底实现会立即报错而非静默出错。
  */

@@ -15,6 +15,7 @@ import {
 } from "./ReactFiberLane";
 import type { RootTag } from "./ReactRootTags";
 import { initializeUpdateQueue } from "./ReactFiberClassUpdateQueue";
+import type { Container } from "./ReactFiberConfig";
 
 // 对照官方 packages/react-reconciler/src/ReactFiberRoot.new.js：官方 FiberRootNode 还带
 // 大量优先级/调度字段（eventTimes、expirationTimes、entangledLanes 等），这些服务于
@@ -29,7 +30,7 @@ export interface RootState {
 
 export class FiberRootNode {
   tag: RootTag;
-  containerInfo: any;
+  containerInfo: Container;
   current: FiberNode;
   finishedWork: FiberNode | null;
   finishedLanes: Lanes;
@@ -49,7 +50,7 @@ export class FiberRootNode {
   // 每条 lane 与之纠缠的 lanes 集合（index = laneToIndex）
   entanglements: Lanes[];
 
-  constructor(containerInfo: any, tag: RootTag) {
+  constructor(containerInfo: Container, tag: RootTag) {
     this.tag = tag;
     this.containerInfo = containerInfo;
     this.current = null as unknown as FiberNode;
@@ -83,7 +84,7 @@ function createLaneMap<T>(initialValue: T): T[] {
  * @returns FiberRootNode
  */
 export function createFiberRoot(
-  containerInfo: any,
+  containerInfo: Container,
   tag: RootTag,
   initialChildren: any,
 ): FiberRootNode {
