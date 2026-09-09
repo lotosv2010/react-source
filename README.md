@@ -62,8 +62,8 @@ react-source/
 │   ├── react-dom/             # DOM 渲染器（简版 createRoot 已搭建）
 │   │   ├── index.ts / client.ts        # npm 分发入口（转出 ReactDOMClient）
 │   │   └── src/client/
-│   │       ├── ReactDOMRoot.ts         # createRoot(container).render() 包装 FiberRootNode
-│   │       ├── ReactDOMClient.ts       # createRoot 工厂函数
+│   │       ├── ReactDOMClient.ts       # 转出层（对照官方，还会挂 findDOMNode/DevTools 等）
+│   │       ├── ReactDOMRoot.ts         # createRoot 工厂函数 + ReactDOMRoot（render 包装 FiberRootNode）
 │   │       └── ReactDOMHostConfig.ts   # DOM HostConfig 实现（createInstance/appendChild 等）
 │   │
 │   └── scheduler/             # 调度器（时间切片、优先级，对照官方完整结构已搭建）

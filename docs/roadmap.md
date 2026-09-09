@@ -72,7 +72,7 @@
   - 占位模块每个导出都 throw，react-dom 构建时把它替换成 `ReactDOMHostConfig`（reconciler 自身仍以 shim 打包）
 
 - [x] **react-dom 简版**（`packages/react-dom`）
-  - `createRoot(container).render(element)`：ReactDOMClient → ReactDOMRoot，底层走 reconciler 的 createContainer/updateContainer
+  - `createRoot(container).render(element)`：ReactDOMClient（转出层）→ ReactDOMRoot（createRoot 实现），底层走 reconciler 的 createContainer/updateContainer
   - DOM HostConfig（`ReactDOMHostConfig.ts`）：createInstance/createTextInstance、className/style/普通属性子集、prepareUpdate/commitUpdate、appendChild/insertBefore/removeChild 等
   - npm 分发文件夹 + rollup 构建产物（cjs dev/prod），bundles.js 注册 react-dom bundle，build.js fork 注入 HostConfig
   - 简版边界：不含 hydrate / legacy render / 事件系统 / shouldSetTextContent 优化 / DOMPropertyOperations 完整体系，留待后续 Phase

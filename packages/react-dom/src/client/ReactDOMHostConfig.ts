@@ -87,7 +87,7 @@ function diffProperties(
 // （对照官方：rootContainerInstance 在 DOM 渲染器里用于创建元素时确定所属文档）。
 let rootContainer: Element = document.documentElement;
 
-/** 设置根容器（仅 ReactDOMClient.createRoot 内部调用，不进对外 API） */
+/** 设置根容器（仅 createRoot 内部调用，不进对外 API） */
 export function setRootHostContainer(container: Element): void {
   rootContainer = container;
 }
