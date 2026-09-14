@@ -5,10 +5,12 @@
 
 import type { FiberNode } from "./ReactFiber";
 import {
+  Callback,
   LayoutMask,
   MutationMask,
   PassiveMask,
   Placement,
+  Snapshot,
   Update,
 } from "./ReactFiberFlags";
 import {
@@ -25,6 +27,7 @@ import {
 import type { Lanes } from "./ReactFiberLane";
 import type { FiberRootNode } from "./ReactFiberRoot";
 import type { Effect, FunctionComponentUpdateQueue } from "./ReactFiberHooks";
+import type { Update as ClassUpdate } from "./ReactFiberClassUpdateQueue";
 import {
   HasEffect as HookHasEffect,
   Layout as HookLayout,
@@ -32,6 +35,7 @@ import {
   type HookFlags,
 } from "./ReactHookEffectTags";
 import {
+  ClassComponent,
   FunctionComponent,
   HostComponent,
   HostPortal,
@@ -324,6 +328,20 @@ function commitDeletionEffectsOnFiber(
       );
       return;
     }
+    case ClassComponent: {
+      // 官方这里先 safelyDetachRef，再 safelyCallComponentWillUnmount（try/catch 包裹，
+      // 本项目错误边界未落地，直接调用，异常留给上层渲染调用方处理）
+      const instance = deletedFiber.stateNode;
+      if (typeof instance.componentWillUnmount === "function") {
+        instance.componentWillUnmount();
+      }
+      recursivelyTraverseDeletionEffects(
+        finishedRoot,
+        nearestMountedAncestor,
+        deletedFiber,
+      );
+      return;
+    }
     default: {
       // Fragment/Mode 等没有自己 DOM 的节点：保持 hostParent 不变，继续向下找可移除的 host 节点
       recursivelyTraverseDeletionEffects(
@@ -373,6 +391,57 @@ function commitDeletionEffects(
     hostParent = null;
     hostParentIsContainer = false;
   }
+}
+
+function recursivelyTraverseBeforeMutationEffects(
+  root: FiberRootNode,
+  parentFiber: FiberNode,
+): void {
+  if (parentFiber.subtreeFlags & Snapshot) {
+    let child = parentFiber.child;
+    while (child !== null) {
+      commitBeforeMutationEffectsOnFiber(root, child);
+      child = child.sibling;
+    }
+  }
+}
+
+// 对照官方 commitBeforeMutationEffectsOnFiber：mutation 之前的一次遍历，只处理
+// getSnapshotBeforeUpdate——它必须在 DOM 变更之前读（比如滚动位置），读到的值挂在实例的
+// __reactInternalSnapshotBeforeUpdate 上，供 layout 阶段的 componentDidUpdate 取用。
+function commitBeforeMutationEffectsOnFiber(
+  root: FiberRootNode,
+  finishedWork: FiberNode,
+): void {
+  const flags = finishedWork.flags;
+
+  switch (finishedWork.tag) {
+    case ClassComponent: {
+      recursivelyTraverseBeforeMutationEffects(root, finishedWork);
+      if (flags & Snapshot) {
+        const current = finishedWork.alternate;
+        const instance = finishedWork.stateNode;
+        if (current !== null) {
+          const prevProps = current.memoizedProps;
+          const prevState = current.memoizedState;
+          instance.__reactInternalSnapshotBeforeUpdate =
+            instance.getSnapshotBeforeUpdate(prevProps, prevState);
+        }
+      }
+      return;
+    }
+    default: {
+      recursivelyTraverseBeforeMutationEffects(root, finishedWork);
+      return;
+    }
+  }
+}
+
+export function commitBeforeMutationEffects(
+  root: FiberRootNode,
+  finishedWork: FiberNode,
+): void {
+  commitBeforeMutationEffectsOnFiber(root, finishedWork);
 }
 
 function recursivelyTraverseMutationEffects(
@@ -498,6 +567,28 @@ function recursivelyTraverseLayoutEffects(
   }
 }
 
+// 对照官方 commitClassCallbacks：processUpdateQueue 把带 callback 的 update 攒到
+// updateQueue.effects（本项目复用 ReactFiberClassUpdateQueue.Update 这个数据结构），
+// layout 子阶段统一执行并清空，保证 setState(partial, callback) 的 callback 在这里触发。
+function commitClassCallbacks(finishedWork: FiberNode): void {
+  const updateQueue = finishedWork.updateQueue;
+  if (updateQueue === null) {
+    return;
+  }
+  const effects: ClassUpdate<any>[] | null = updateQueue.effects;
+  updateQueue.effects = null;
+  if (effects !== null) {
+    for (let i = 0; i < effects.length; i++) {
+      const effect = effects[i];
+      const callback = effect.callback;
+      if (callback !== null) {
+        effect.callback = null;
+        callback.call(finishedWork.stateNode);
+      }
+    }
+  }
+}
+
 // 对照官方 commitLayoutEffectsOnFiber：mutation 阶段结束、root.current 已切换之后的
 // 第二次遍历，只挂载 layout effect（销毁已经在 mutation 阶段做过了）。
 function commitLayoutEffectsOnFiber(
@@ -511,6 +602,28 @@ function commitLayoutEffectsOnFiber(
       recursivelyTraverseLayoutEffects(root, finishedWork);
       if (flags & Update) {
         commitHookEffectListMount(HookLayout | HookHasEffect, finishedWork);
+      }
+      return;
+    }
+    case ClassComponent: {
+      recursivelyTraverseLayoutEffects(root, finishedWork);
+      const instance = finishedWork.stateNode;
+      if (flags & Update) {
+        const current = finishedWork.alternate;
+        if (current === null) {
+          instance.componentDidMount();
+        } else {
+          const prevProps = current.memoizedProps;
+          const prevState = current.memoizedState;
+          instance.componentDidUpdate(
+            prevProps,
+            prevState,
+            instance.__reactInternalSnapshotBeforeUpdate,
+          );
+        }
+      }
+      if (flags & Callback) {
+        commitClassCallbacks(finishedWork);
       }
       return;
     }

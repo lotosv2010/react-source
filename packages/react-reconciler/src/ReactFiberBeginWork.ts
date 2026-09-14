@@ -15,6 +15,11 @@ import {
   cloneUpdateQueue,
   processUpdateQueue,
 } from "./ReactFiberClassUpdateQueue";
+import {
+  constructClassInstance,
+  mountClassInstance,
+  updateClassInstance,
+} from "./ReactFiberClassComponent";
 import type { FiberNode } from "./ReactFiber";
 import { DidCapture, NoFlags, PerformedWork } from "./ReactFiberFlags";
 import { NoLanes, includesSomeLane, type Lanes } from "./ReactFiberLane";
@@ -26,6 +31,7 @@ import {
   readContext,
 } from "./ReactFiberNewContext";
 import {
+  ClassComponent,
   ContextConsumer,
   ContextProvider,
   Fragment,
@@ -75,8 +81,16 @@ export function reconcileChildren(
   }
 }
 
-// 官方用 shouldConstruct（看 type.prototype 是否 extends React.Component）区分 class/function，
-// class 组件留到 Phase 8。这里 mountIndeterminateComponent 一律按函数组件定型。
+// 对照官方 shouldConstruct：看 type.prototype 上是否有 isReactComponent 标记
+// （Component.prototype.isReactComponent，见 ReactBaseClasses.ts）区分 class/function。
+function shouldConstruct(Component: any): boolean {
+  const prototype = Component.prototype;
+  return !!(prototype && prototype.isReactComponent);
+}
+
+// mountIndeterminateComponent：首次挂载时还不确定是 class 还是 function，
+// shouldConstruct 命中就转去走 class 组件的实例化 + 生命周期链路；否则按函数组件定型。
+// 官方这里还会探测"函数返回 class 实例"的 module pattern 组件，本项目不支持，忽略。
 function mountIndeterminateComponent(
   _current: FiberNode | null,
   workInProgress: FiberNode,
@@ -84,6 +98,19 @@ function mountIndeterminateComponent(
   renderLanes: Lanes,
 ): FiberNode | null {
   const props = workInProgress.pendingProps;
+
+  if (shouldConstruct(Component)) {
+    workInProgress.tag = ClassComponent;
+    constructClassInstance(workInProgress, Component, props);
+    mountClassInstance(workInProgress, Component, props);
+    return finishClassComponent(
+      null,
+      workInProgress,
+      Component,
+      true,
+      renderLanes,
+    );
+  }
 
   prepareToReadContext(workInProgress, renderLanes);
   const value = renderWithHooks(
@@ -97,11 +124,60 @@ function mountIndeterminateComponent(
   // DevTools 读取这个 flag 判断组件是否执行过
   workInProgress.flags |= PerformedWork;
 
-  // 暂按函数组件定型（官方这里还会探测"返回 class 实例"的 module pattern 组件，留到 Phase 8）
   workInProgress.tag = FunctionComponent;
 
   reconcileChildren(null, workInProgress, value, renderLanes);
   return workInProgress.child;
+}
+
+// 对照官方 finishClassComponent：调用 instance.render() 拿到 children 并 reconcile，
+// shouldUpdate 为 false（sCU 拦下）时走 bailout（仍需 cloneChildFibers 保证子树结构一致）。
+function finishClassComponent(
+  current: FiberNode | null,
+  workInProgress: FiberNode,
+  _Component: any,
+  shouldUpdate: boolean,
+  renderLanes: Lanes,
+): FiberNode | null {
+  if (!shouldUpdate) {
+    return bailoutOnAlreadyFinishedWork(
+      current as FiberNode,
+      workInProgress,
+      renderLanes,
+    );
+  }
+
+  const instance = workInProgress.stateNode;
+  const nextChildren = instance.render();
+
+  workInProgress.flags |= PerformedWork;
+  reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+  return workInProgress.child;
+}
+
+// 对照官方 updateClassComponent：current === null 是"resumeMountClassInstance"场景
+// （本项目无可恢复的中断渲染，不会命中），恒走 updateClassInstance 计算 shouldUpdate。
+function updateClassComponent(
+  current: FiberNode | null,
+  workInProgress: FiberNode,
+  Component: any,
+  nextProps: any,
+  renderLanes: Lanes,
+): FiberNode | null {
+  const shouldUpdate = updateClassInstance(
+    current as FiberNode,
+    workInProgress,
+    Component,
+    nextProps,
+    renderLanes,
+  );
+  return finishClassComponent(
+    current,
+    workInProgress,
+    Component,
+    shouldUpdate,
+    renderLanes,
+  );
 }
 
 function updateFunctionComponent(
@@ -361,6 +437,16 @@ function beginWork(
     case FunctionComponent: {
       const Component = workInProgress.type;
       return updateFunctionComponent(
+        current,
+        workInProgress,
+        Component,
+        workInProgress.pendingProps,
+        renderLanes,
+      );
+    }
+    case ClassComponent: {
+      const Component = workInProgress.type;
+      return updateClassComponent(
         current,
         workInProgress,
         Component,

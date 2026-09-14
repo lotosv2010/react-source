@@ -139,6 +139,18 @@ export function enqueueUpdate<State>(
   return enqueueConcurrentClassUpdate(fiber, sharedQueue, update, lane);
 }
 
+// 对照官方模块级 hasForceUpdate：processUpdateQueue 处理到 ForceUpdate 类型的 update 时置真，
+// beginWork 据此跳过"state 没变就 bailout"的判断——forceUpdate 语义就是"即使 state 引用不变也要重渲染"。
+let hasForceUpdate = false;
+
+export function resetHasForceUpdateBeforeProcessing(): void {
+  hasForceUpdate = false;
+}
+
+export function checkHasForceUpdateAfterProcessing(): boolean {
+  return hasForceUpdate;
+}
+
 // 单 lane 模型下 update 不会因优先级不足被跳过（只有 SyncLane 一条 lane），
 // 但保留官方 getStateFromUpdate 的完整语义：payload 是对象则浅合并，是函数则作为 reducer 调用。
 function getStateFromUpdate<State>(
@@ -174,6 +186,7 @@ function getStateFromUpdate<State>(
       return Object.assign({}, prevState, partialState);
     }
     case ForceUpdate: {
+      hasForceUpdate = true;
       return prevState;
     }
   }
@@ -332,8 +345,4 @@ export function processUpdateQueue<State>(
     workInProgress.lanes = newLanes;
     workInProgress.memoizedState = newState;
   }
-}
-
-export function resetHasForceUpdateBeforeProcessing(): void {
-  // forceUpdate 留到 Phase 8
 }

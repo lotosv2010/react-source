@@ -5,6 +5,7 @@
 
 import { createElement, isValidElement } from "./ReactElement";
 import { createContext } from "./ReactContext";
+import { Component, PureComponent } from "./ReactBaseClasses";
 import {
   useCallback,
   useContext,
@@ -25,6 +26,8 @@ import ReactSharedInternals from "./ReactSharedInternals";
 // jsx-runtime.ts / jsx-dev-runtime.ts 两个独立入口（对应 react/jsx-runtime、
 // react/jsx-dev-runtime），不再从这里导出。
 export {
+  Component,
+  PureComponent,
   createContext,
   createElement,
   isValidElement,
@@ -49,6 +52,8 @@ export { ReactSharedInternals as __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FI
 
 export default {
   version: "1.0.0",
+  Component,
+  PureComponent,
   createContext,
   createElement,
   isValidElement,

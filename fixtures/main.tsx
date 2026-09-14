@@ -7,6 +7,7 @@ import DomComp from "./dom/index";
 import runHooksDemo from "./hooks/index";
 import runEventsDemo from "./events/index";
 import runContextDemo from "./context/index";
+import runClassDemo from "./class/index";
 
 // react-dom 简版（createRoot）已落地，HostConfig 由构建时 fork 注入，
 // 这里先只验证 createElement/jsx 能不能正常产出 element 对象。
@@ -27,6 +28,9 @@ runEventsDemo();
 
 // Context API 验证：createContext/Provider/Consumer/useContext + 消费传播（Phase 7）
 runContextDemo();
+
+// Class 组件验证：生命周期（挂载/更新/卸载）+ setState/forceUpdate + PureComponent（Phase 8）
+runClassDemo();
 
 const root = createRoot(document.getElementById("root")!);
 root.render(

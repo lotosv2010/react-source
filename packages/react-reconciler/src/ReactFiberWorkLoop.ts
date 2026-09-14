@@ -8,6 +8,7 @@
 import { beginWork } from "./ReactFiberBeginWork";
 import { completeWork } from "./ReactFiberCompleteWork";
 import {
+  commitBeforeMutationEffects,
   commitLayoutEffects,
   commitMutationEffects,
   commitPassiveMountEffects,
@@ -344,8 +345,10 @@ function commitRootImpl(root: FiberRootNode): void {
   const prevExecutionContext = executionContext;
   executionContext |= CommitContext;
 
-  // mutation 子阶段：插入/更新/删除 DOM（before-mutation 子阶段留到后续，本项目暂无
-  // getSnapshotBeforeUpdate/Snapshot flag 场景）
+  // before-mutation 子阶段：只处理 getSnapshotBeforeUpdate（必须在 DOM 变更前读）
+  commitBeforeMutationEffects(root, finishedWork);
+
+  // mutation 子阶段：插入/更新/删除 DOM
   commitMutationEffects(root, finishedWork, lanes);
 
   // 双缓存树交换：workInProgress 树提交后成为新的 current 树。layout effect 必须在这之后

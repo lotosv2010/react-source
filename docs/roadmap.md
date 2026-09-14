@@ -130,7 +130,7 @@
 
 > **Phase 2 / Phase 3 / Phase 4 已完成**：`react-dom` 包（`createRoot(container).render(<App />)` 渲染到真实 DOM，简版）、reconciler 主链路 + 更新与 Diff 算法、以及 Scheduler + 完整 Lane 模型 + 可中断 workLoop 均已落地，详见上文「已完成」区。
 >
-> **Phase 5（Hooks）/ Phase 6（事件系统）/ Phase 7（Context API）已完成**：核心 Hooks（useState/useReducer/useEffect/useLayoutEffect/useTransition/useDeferredValue/useSyncExternalStore 等）+ 合成事件系统（事件委托、SyntheticEvent、事件优先级分发）+ Context API（createContext/Provider/Consumer/useContext + 变化传播）均已落地并验证，详见下文对应小节。仍显式搭置：**noop-renderer**（5.5，测试渲染器，暂不实现）、**useId**（推迟到 Phase 9 随 hydrate 一起补齐）。故当前待实现项从 **Phase 8（Class 组件生命周期）** 开始。
+> **Phase 5（Hooks）/ Phase 6（事件系统）/ Phase 7（Context API）/ Phase 8（Class 组件生命周期）已完成**：核心 Hooks（useState/useReducer/useEffect/useLayoutEffect/useTransition/useDeferredValue/useSyncExternalStore 等）+ 合成事件系统（事件委托、SyntheticEvent、事件优先级分发）+ Context API（createContext/Provider/Consumer/useContext + 变化传播）+ Class 组件（生命周期、setState/forceUpdate、PureComponent）均已落地并验证，详见下文对应小节。仍显式搁置：**noop-renderer**（5.5，测试渲染器，暂不实现）、**useId**（推迟到 Phase 9 随 hydrate 一起补齐）。故当前待实现项从 **Phase 9（其他核心 API + 性能优化）** 开始。
 
 ---
 
@@ -256,16 +256,33 @@
 
 #### 8.1 ClassComponent beginWork
 
-- shouldConstruct（type.prototype 是否为 React.Component 子类）区分 class/function（当前 mountIndeterminateComponent 一律按函数组件定型）
-- 实例化：new Component(props, context)
-- 挂载阶段：constructor → getDerivedStateFromProps → render → componentDidMount
-- 更新阶段：shouldComponentUpdate → render → getSnapshotBeforeUpdate → componentDidUpdate
+- [x] `shouldConstruct`（`packages/react-reconciler/src/ReactFiberBeginWork.ts`，看 `type.prototype.isReactComponent` 是否为真）区分 class/function：`mountIndeterminateComponent` 命中后把 `workInProgress.tag` 定成 `ClassComponent`，走 `constructClassInstance` + `mountClassInstance`；未命中则按函数组件走原路径
+- [x] 实例化：`constructClassInstance`（`ReactFiberClassComponent.ts`，对照官方 `constructClassInstance`）`new Component(props)`，随后挂 `instance.updater = classComponentUpdater`、`instance._reactInternals = workInProgress`（官方字段名，供 updater 反查所属 fiber），`workInProgress.memoizedState` 初始化为 `instance.state`（ClassComponent 的 memoizedState 语义是"实例的 state"，与函数组件的 hook 链表不同）
+- [x] 挂载阶段（`mountClassInstance`）：`constructor`（已在外部完成）→ `getDerivedStateFromProps`（`applyDerivedStateFromProps`，与旧 state 浅合并写回 `memoizedState`）→ `initializeUpdateQueue` → `render`（`finishClassComponent` 里调用 `instance.render()`）→ `componentDidMount`（若定义，打 `Update` flag，commit 的 layout 子阶段执行）
+- [x] 更新阶段（`updateClassInstance`）：`cloneUpdateQueue` → `processUpdateQueue` 算出新 state → `getDerivedStateFromProps` → props/state 都没变且无 `forceUpdate` 时直接 bailout（不调用任何生命周期）→ `checkShouldComponentUpdate`（`forceUpdate` 短路跳过判断；用户定义 `shouldComponentUpdate` 优先；`PureComponent` 走 `shallowEqual` 浅比较；否则默认总是更新）→ `shouldUpdate` 为真才打 `Snapshot`/`Update` flag → `finishClassComponent` 调用 `instance.render()`
 
 #### 8.2 setState / forceUpdate
 
-- 复用 ReactFiberClassUpdateQueue 的 Update 队列（回调 effect、forceUpdate 分支当前是空壳）
+- [x] 复用 `ReactFiberClassUpdateQueue` 的 Update 队列：`classComponentUpdater.enqueueSetState`/`enqueueForceUpdate`（`ReactFiberClassComponent.ts`）创建 `Update` 对象（`forceUpdate` 用 `tag = ForceUpdate`），走 `enqueueUpdate` → `scheduleUpdateOnFiber`，与函数组件/HostRoot 共用同一套并发更新入队机制
+- [x] `hasForceUpdate` 模块级标记（`ReactFiberClassUpdateQueue.ts`）：`processUpdateQueue` 处理到 `ForceUpdate` 类型的 update 时置真，`resetHasForceUpdateBeforeProcessing`/`checkHasForceUpdateAfterProcessing` 供 `updateClassInstance` 读取，驱动"跳过 shouldComponentUpdate"与"props/state 都没变也要重渲染"两处判断
+- [x] `setState`/`forceUpdate` 的 `callback` 参数：`processUpdateQueue` 把带 callback 的 update 收集进 `queue.effects` 并打 `Callback` flag（`LayoutMask` 并入 `Callback`），`commitClassCallbacks`（`ReactFiberCommitWork.ts`）在 layout 子阶段统一执行并清空
 
-**阶段目标验收**：能够使用 class 组件，生命周期按正确顺序执行。
+#### 8.3 getSnapshotBeforeUpdate / before-mutation 子阶段
+
+- [x] 新增 commit 的 before-mutation 子阶段（`commitBeforeMutationEffects`，`ReactFiberCommitWork.ts` + `ReactFiberWorkLoop.ts` 的 `commitRootImpl` 在 `commitMutationEffects` 之前调用）：只处理 `ClassComponent` 打了 `Snapshot` flag 的节点，调用 `instance.getSnapshotBeforeUpdate(prevProps, prevState)`，结果挂在 `instance.__reactInternalSnapshotBeforeUpdate` 上（官方同名字段），供 layout 子阶段的 `componentDidUpdate` 第三个参数取用
+- [x] `ReactFiberFlags.ts` 补 `BeforeMutationMask = Snapshot`
+
+#### 8.4 componentWillUnmount
+
+- [x] `commitDeletionEffectsOnFiber`（`ReactFiberCommitWork.ts`）补 `ClassComponent` 分支：整棵组件被卸载时调用 `instance.componentWillUnmount()`（若定义），与 `FunctionComponent` 分支清理 hook effect 的位置对应
+
+**简化范围**（渐进式搭建，明确取舍）：
+
+- 不支持 legacy `componentWillMount`/`componentWillReceiveProps`/`componentWillUpdate`（官方也已废弃，仅 `UNSAFE_` 前缀保留兼容），`context`（第二个参数）恒为 `undefined`（legacy context 未实现，见 Phase 7 简化范围）
+- 不做错误边界相关的 `getDerivedStateFromError`/`componentDidCatch`（留到 Phase 9.3），不做 `CaptureUpdate` 类型 update 的重放语义
+- `Component`/`PureComponent` 用 TS class + 泛型实现（区别于官方 Flow 环境的 function + prototype 赋值写法），运行时行为（`updater` 注入、`isReactComponent`/`isPureReactComponent` 标记）与官方一致，只是语法载体不同，方便业务代码获得 `this.props`/`this.state` 类型推导
+
+**阶段目标验收**：能够使用 class 组件，生命周期按正确顺序执行（`fixtures/class`：挂载/更新/卸载全链路 + setState 回调 + forceUpdate + PureComponent 浅比较跳过渲染）。
 
 ---
 

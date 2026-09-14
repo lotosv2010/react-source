@@ -216,9 +216,10 @@ export function createFiberFromTypeAndProps(
   let fiberTag: WorkTag = IndeterminateComponent;
 
   if (typeof type === "function") {
-    // 官方这里用 shouldConstruct(type)（看 type.prototype 是否为 React.Component 子类）区分
-    // class/function，class 组件留到 Phase 8 再区分，先都按不确定组件走，挂载时
-    // mountIndeterminateComponent 会再定成 FunctionComponent。
+    // 官方在这里就用 shouldConstruct(type) 区分 class/function 直接定出 ClassComponent/
+    // IndeterminateComponent 两种 tag；本项目统一先按不确定组件走，挂载时
+    // mountIndeterminateComponent 用同一个 shouldConstruct 判断再定成 ClassComponent/
+    // FunctionComponent——效果等价，只是判断时机延后到第一次 beginWork。
     fiberTag = IndeterminateComponent;
   } else if (typeof type === "string") {
     fiberTag = HostComponent;

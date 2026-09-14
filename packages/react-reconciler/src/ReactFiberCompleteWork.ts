@@ -21,6 +21,7 @@ import {
 import { NoLanes, mergeLanes, type Lanes } from "./ReactFiberLane";
 import { popProvider } from "./ReactFiberNewContext";
 import {
+  ClassComponent,
   ContextConsumer,
   ContextProvider,
   Fragment,
@@ -161,6 +162,7 @@ function completeWork(
   switch (workInProgress.tag) {
     case IndeterminateComponent:
     case FunctionComponent:
+    case ClassComponent:
     case Fragment:
     case Mode:
     case ContextConsumer:
