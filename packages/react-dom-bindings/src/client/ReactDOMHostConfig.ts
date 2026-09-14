@@ -128,7 +128,6 @@ export function appendInitialChild(
   parentInstance: Element,
   child: Element | Text,
 ): void {
-  console.log("appendInitialChild", parentInstance, child);
   parentInstance.appendChild(child);
 }
 
@@ -182,7 +181,6 @@ export function appendChild(
   parentInstance: Element,
   child: Element | Text,
 ): void {
-  console.log("appendChild", parentInstance, child);
   parentInstance.appendChild(child);
 }
 
@@ -190,7 +188,6 @@ export function appendChildToContainer(
   container: Container,
   child: Element | Text,
 ): void {
-  console.log("appendChildToContainer", container, child);
   container.appendChild(child);
 }
 
