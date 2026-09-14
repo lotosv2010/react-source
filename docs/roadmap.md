@@ -150,14 +150,14 @@
 
 #### 5.3 核心 Hooks 实现
 
-- **useState**：mountState / updateState / dispatchSetState（创建 update、加入 queue、调度更新）
-- **useReducer**：mountReducer / updateReducer（useState 是其特例实现，共用同一套更新队列逻辑）
+- [x] **useState**：mountState / updateState / dispatchSetState（创建 update、加入 queue、调度更新）
+- [x] **useReducer**：mountReducer / updateReducer（useState 是其特例实现，共用同一套更新队列逻辑）
+- [x] **useRef**：mountRef 创建 { current: initialValue }，updateRef 原样返回、不比较 deps
+- [x] **useMemo / useCallback**：mountMemo/updateMemo、mountCallback/updateCallback，areHookInputsEqual 对比 deps，变化则重算/返回新引用，否则复用缓存
 - **useEffect**：mountEffect / updateEffect（deps 对比、标记 Passive flag）
   - commit 阶段异步执行 flushPassiveEffects：先执行 destroy 清理，再执行 create，缓存 destroy
   - 补 commitRoot 的 before-mutation / layout 子阶段（Passive effect 的调度入口）
 - **useLayoutEffect**：mountLayoutEffect / updateLayoutEffect（deps 对比、标记 Layout flag，在 commit layout 子阶段同步执行 destroy/create）
-- **useRef**：mountRef 创建 { current: initialValue }
-- **useMemo / useCallback**：对比 deps，变化则重算，否则返回缓存值
 - **useTransition**：startTransition 把更新标记为 TransitionLane，返回 isPending
 - **useDeferredValue**：延迟渲染次要更新，配合 TransitionLane / Suspense 使用
 - **useSyncExternalStore**：commit 后同步校验外部 store 快照是否一致（tearing 检测），不一致则强制同步重渲染，是外部状态库适配并发特性的标准方案

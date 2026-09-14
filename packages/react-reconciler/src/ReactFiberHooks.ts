@@ -4,7 +4,7 @@
  * Hook 以链表形式挂在 fiber.memoizedState 上，renderWithHooks 在函数组件渲染前根据
  * mount/update 切换 ReactCurrentDispatcher.current，组件体内调用的 useState/useReducer
  * 通过这个 dispatcher 找到对应的 mountXxx/updateXxx 实现。
- * 当前只落地 useState/useReducer 两个基础 hook；useEffect/useLayoutEffect/useRef/useMemo 等
+ * 当前落地 useState/useReducer/useRef/useMemo/useCallback；useEffect/useLayoutEffect 等
  * 见 roadmap Phase 5.3，eagerState dispatch 侧优化见 Phase 9.4，均按官方结构逐步补齐。
  */
 
@@ -297,6 +297,84 @@ function updateReducer<S, A>(
   return [hook.memoizedState, dispatch];
 }
 
+// 对照官方 mountRef：ref 对象只在 mount 时创建一次，之后每次渲染 updateRef 都原样返回，
+// 不依赖 deps 比较——这也是 useRef 天然“跨渲染保持同一个引用”的由来。
+function mountRef<T>(initialValue: T): { current: T } {
+  const hook = mountWorkInProgressHook();
+  const ref = { current: initialValue };
+  hook.memoizedState = ref;
+  return ref;
+}
+
+function updateRef<T>(_initialValue: T): { current: T } {
+  const hook = updateWorkInProgressHook();
+  return hook.memoizedState;
+}
+
+// 对照官方 areHookInputsEqual：逐项用 Object.is 比较新旧 deps，长度不同以官方实现为准——
+// 不做额外校验（deps 数组长度变化本身就是误用），依赖数组为 null/undefined 视为每次都要重算。
+function areHookInputsEqual(
+  nextDeps: unknown[] | null,
+  prevDeps: unknown[] | null,
+): boolean {
+  if (prevDeps === null) {
+    return false;
+  }
+  for (let i = 0; i < prevDeps.length && i < nextDeps!.length; i++) {
+    if (is(nextDeps![i], prevDeps[i])) {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+function mountMemo<T>(nextCreate: () => T, deps: unknown[] | void | null): T {
+  const hook = mountWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  const nextValue = nextCreate();
+  hook.memoizedState = [nextValue, nextDeps];
+  return nextValue;
+}
+
+function updateMemo<T>(nextCreate: () => T, deps: unknown[] | void | null): T {
+  const hook = updateWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  const prevState = hook.memoizedState;
+  if (nextDeps !== null) {
+    const prevDeps: unknown[] | null = prevState[1];
+    if (areHookInputsEqual(nextDeps, prevDeps)) {
+      return prevState[0];
+    }
+  }
+  const nextValue = nextCreate();
+  hook.memoizedState = [nextValue, nextDeps];
+  return nextValue;
+}
+
+// 对照官方 mountCallback/updateCallback：useCallback 是 useMemo 的特例——缓存的是函数本身
+// 而不是调用结果，所以不像 mountMemo 那样立刻执行 create。
+function mountCallback<T>(callback: T, deps: unknown[] | void | null): T {
+  const hook = mountWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  hook.memoizedState = [callback, nextDeps];
+  return callback;
+}
+
+function updateCallback<T>(callback: T, deps: unknown[] | void | null): T {
+  const hook = updateWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  const prevState = hook.memoizedState;
+  if (nextDeps !== null) {
+    const prevDeps: unknown[] | null = prevState[1];
+    if (areHookInputsEqual(nextDeps, prevDeps)) {
+      return prevState[0];
+    }
+  }
+  hook.memoizedState = [callback, nextDeps];
+  return callback;
+}
+
 // dispatchSetState/dispatchReducerAction 逻辑相同（本项目暂不做 eagerState 优化，见 Phase 9.4），
 // 保留两个名字只是对照官方两套 hook 各自的 dispatch 入口命名。
 function enqueueHookUpdate<S, A>(
@@ -345,16 +423,25 @@ function throwInvalidHookError(): never {
 const ContextOnlyDispatcher = {
   useState: throwInvalidHookError,
   useReducer: throwInvalidHookError,
+  useRef: throwInvalidHookError,
+  useMemo: throwInvalidHookError,
+  useCallback: throwInvalidHookError,
 };
 
 const HooksDispatcherOnMount = {
   useState: mountState,
   useReducer: mountReducer,
+  useRef: mountRef,
+  useMemo: mountMemo,
+  useCallback: mountCallback,
 };
 
 const HooksDispatcherOnUpdate = {
   useState: updateState,
   useReducer: updateReducer,
+  useRef: updateRef,
+  useMemo: updateMemo,
+  useCallback: updateCallback,
 };
 
 // 对照官方 renderWithHooks：渲染前重置 hook 相关模块状态、按 mount/update 切换 dispatcher，

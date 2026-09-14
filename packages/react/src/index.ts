@@ -4,14 +4,28 @@
  */
 
 import { createElement, isValidElement } from "./ReactElement";
-import { useReducer, useState } from "./ReactHooks";
+import {
+  useCallback,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "./ReactHooks";
 import ReactSharedInternals from "./ReactSharedInternals";
 
 // 对照官方 packages/react/index.js re-export './src/React'：
 // 经典入口只暴露 createElement/isValidElement，jsx/jsxDEV 已经拆到
 // jsx-runtime.ts / jsx-dev-runtime.ts 两个独立入口（对应 react/jsx-runtime、
 // react/jsx-dev-runtime），不再从这里导出。
-export { createElement, isValidElement, useReducer, useState };
+export {
+  createElement,
+  isValidElement,
+  useCallback,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+};
 
 // 对照官方 v18 的 __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED：reconciler 与 react
 // 是两个独立发布的包，reconciler 要在渲染前切换 ReactCurrentDispatcher.current 却不能反向
@@ -25,4 +39,7 @@ export default {
   isValidElement,
   useState,
   useReducer,
+  useRef,
+  useMemo,
+  useCallback,
 };

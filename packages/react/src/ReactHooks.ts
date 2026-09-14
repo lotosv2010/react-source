@@ -52,3 +52,36 @@ export function useReducer<S, I, A>(
   const dispatcher = resolveDispatcher();
   return dispatcher.useReducer(reducer, initialArg, init);
 }
+
+/**
+ * useRef() - 创建一个跨渲染保持同一引用的可变对象
+ * @param initialValue - ref 的初始值
+ * @returns { current: T } 形状的可变对象
+ */
+export function useRef<T>(initialValue: T): { current: T } {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useRef(initialValue);
+}
+
+/**
+ * useMemo() - 缓存一个计算结果，仅在依赖变化时重新计算
+ * @param nextCreate - 计算函数
+ * @param deps - 依赖数组，为 null/undefined 时每次渲染都重新计算
+ */
+export function useMemo<T>(
+  nextCreate: () => T,
+  deps: unknown[] | void | null,
+): T {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useMemo(nextCreate, deps);
+}
+
+/**
+ * useCallback() - 缓存一个函数引用，仅在依赖变化时返回新的函数
+ * @param callback - 待缓存的函数
+ * @param deps - 依赖数组，为 null/undefined 时每次渲染都返回新引用
+ */
+export function useCallback<T>(callback: T, deps: unknown[] | void | null): T {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useCallback(callback, deps);
+}
