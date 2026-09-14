@@ -38,6 +38,7 @@ import {
 import ReactSharedInternals from "shared/ReactSharedInternals";
 import type { FiberRootNode } from "./ReactFiberRoot";
 import { finishQueueingConcurrentUpdates } from "./ReactFiberConcurrentUpdates";
+import { resetContextDependencies } from "./ReactFiberNewContext";
 import {
   ContinuousEventPriority,
   DefaultEventPriority,
@@ -269,6 +270,9 @@ function renderRootSync(root: FiberRootNode, lanes: Lanes): number {
   }
 
   workLoopSync();
+  // 渲染阶段结束（正常完成或本函数即将 throw），重置 context 依赖收集状态，
+  // 避免渲染阶段外误读到上一次渲染残留的 currentlyRenderingFiber
+  resetContextDependencies();
 
   executionContext = prevExecutionContext;
 
@@ -298,6 +302,8 @@ function renderRootConcurrent(root: FiberRootNode, lanes: Lanes): number {
   }
 
   workLoopConcurrent();
+  // 时间片用完中途让出，或整棵树渲染完成，都要重置 context 依赖收集状态
+  resetContextDependencies();
 
   executionContext = prevExecutionContext;
 

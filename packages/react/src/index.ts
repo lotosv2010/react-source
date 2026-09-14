@@ -4,8 +4,10 @@
  */
 
 import { createElement, isValidElement } from "./ReactElement";
+import { createContext } from "./ReactContext";
 import {
   useCallback,
+  useContext,
   useDeferredValue,
   useEffect,
   useLayoutEffect,
@@ -23,9 +25,11 @@ import ReactSharedInternals from "./ReactSharedInternals";
 // jsx-runtime.ts / jsx-dev-runtime.ts 两个独立入口（对应 react/jsx-runtime、
 // react/jsx-dev-runtime），不再从这里导出。
 export {
+  createContext,
   createElement,
   isValidElement,
   useCallback,
+  useContext,
   useDeferredValue,
   useEffect,
   useLayoutEffect,
@@ -45,6 +49,7 @@ export { ReactSharedInternals as __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FI
 
 export default {
   version: "1.0.0",
+  createContext,
   createElement,
   isValidElement,
   useState,
@@ -52,6 +57,7 @@ export default {
   useRef,
   useMemo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useTransition,

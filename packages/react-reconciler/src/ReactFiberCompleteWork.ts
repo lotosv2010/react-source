@@ -4,6 +4,8 @@
  * 把子节点的副作用标记汇总到父节点（bubbleProperties）
  */
 
+import type { ReactContext } from "shared/ReactTypes";
+
 import type { FiberNode } from "./ReactFiber";
 import { NoFlags, Update, type Flags } from "./ReactFiberFlags";
 import {
@@ -17,7 +19,10 @@ import {
   supportsMutation,
 } from "./ReactFiberConfig";
 import { NoLanes, mergeLanes, type Lanes } from "./ReactFiberLane";
+import { popProvider } from "./ReactFiberNewContext";
 import {
+  ContextConsumer,
+  ContextProvider,
   Fragment,
   FunctionComponent,
   HostComponent,
@@ -158,8 +163,15 @@ function completeWork(
     case FunctionComponent:
     case Fragment:
     case Mode:
+    case ContextConsumer:
       bubbleProperties(workInProgress);
       return null;
+    case ContextProvider: {
+      const context: ReactContext<any> = workInProgress.type._context;
+      popProvider(context, workInProgress);
+      bubbleProperties(workInProgress);
+      return null;
+    }
     case HostRoot: {
       const fiberRoot = workInProgress.stateNode;
       if (fiberRoot.pendingContext) {

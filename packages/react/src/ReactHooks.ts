@@ -3,6 +3,8 @@
  * @description useState/useReducer 等对外 API，只做参数转发，真正实现在当前 Dispatcher 上
  */
 
+import type { ReactContext } from "shared/ReactTypes";
+
 import ReactCurrentDispatcher from "./ReactCurrentDispatcher";
 
 // 对照官方 packages/react/src/ReactHooks.js：react 包本身不实现 hook 逻辑，只是从
@@ -141,4 +143,13 @@ export function useSyncExternalStore<T>(
 ): T {
   const dispatcher = resolveDispatcher();
   return dispatcher.useSyncExternalStore(subscribe, getSnapshot);
+}
+
+/**
+ * useContext() - 读取最近祖先 Provider 提供的 context 值，没有匹配的 Provider 时返回默认值
+ * @param context - createContext() 创建的 Context 对象
+ */
+export function useContext<T>(context: ReactContext<T>): T {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useContext(context);
 }

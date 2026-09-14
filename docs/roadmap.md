@@ -128,7 +128,9 @@
 
 ## 待实现
 
-> **Phase 2 / Phase 3 / Phase 4 已完成**：`react-dom` 包（`createRoot(container).render(<App />)` 渲染到真实 DOM，简版）、reconciler 主链路 + 更新与 Diff 算法、以及 Scheduler + 完整 Lane 模型 + 可中断 workLoop 均已落地，详见上文「已完成」区，故待实现项从 **Phase 5** 开始。后续 Phase 补齐 hydrate、legacy render、事件系统与 DOMPropertyOperations 完整体系。
+> **Phase 2 / Phase 3 / Phase 4 已完成**：`react-dom` 包（`createRoot(container).render(<App />)` 渲染到真实 DOM，简版）、reconciler 主链路 + 更新与 Diff 算法、以及 Scheduler + 完整 Lane 模型 + 可中断 workLoop 均已落地，详见上文「已完成」区。
+>
+> **Phase 5（Hooks）/ Phase 6（事件系统）/ Phase 7（Context API）已完成**：核心 Hooks（useState/useReducer/useEffect/useLayoutEffect/useTransition/useDeferredValue/useSyncExternalStore 等）+ 合成事件系统（事件委托、SyntheticEvent、事件优先级分发）+ Context API（createContext/Provider/Consumer/useContext + 变化传播）均已落地并验证，详见下文对应小节。仍显式搭置：**noop-renderer**（5.5，测试渲染器，暂不实现）、**useId**（推迟到 Phase 9 随 hydrate 一起补齐）。故当前待实现项从 **Phase 8（Class 组件生命周期）** 开始。
 
 ---
 
@@ -221,22 +223,32 @@
 
 #### 7.0 ReactFiberStack（通用栈基础设施）
 
-- `packages/react-reconciler/src/ReactFiberStack.ts`（官方同名文件，Context/legacy context/host context 共用这一套通用栈）
-  - `createCursor` / `push` / `pop`：以 `renderLanes` 无关的方式在 render 阶段栈式保存/恢复某个值，`pop` 时机由子树是否遍历完毕决定（对应 completeWork 归的时机）
+- [x] `packages/react-reconciler/src/ReactFiberStack.ts`（官方同名文件，Context/legacy context/host context 共用这一套通用栈）
+  - `createCursor` / `push` / `pop`：用两个平行数组（`valueStack` + 栈顶指针 `index`）模拟调用栈，`pop` 时机由子树是否遍历完毕决定（对应 completeWork 归的时机）；官方 DEV 模式下还有 `fiberStack` 做 push/pop 配对校验，本项目省略
   - Context 的 `pushProvider`/`popProvider`（7.1）就是这套栈的具体应用之一，不是 Context 专属机制
 
 #### 7.1 createContext / Provider / Consumer / useContext
 
-- createContext(defaultValue) → { Provider, Consumer, _currentValue }
-- Provider 组件：beginWork 时将 value 压入栈（pushProvider，基于 7.0 的通用栈）
-- 消费：函数组件 useContext(Context)，class 组件 contextType / Consumer
+- [x] `createContext(defaultValue)`（`packages/react/src/ReactContext.ts`）→ `{ Provider, Consumer, _currentValue }`；`Provider`/`Consumer` 通过 `$$typeof`（`REACT_PROVIDER_TYPE`/`REACT_CONTEXT_TYPE`）区分，`createFiberFromTypeAndProps`（`ReactFiber.ts`）按 `$$typeof` 分发出 `ContextProvider`/`ContextConsumer` 两个新 WorkTag（9/10，数值对齐官方）
+- [x] Provider 组件：`updateContextProvider`（`ReactFiberBeginWork.ts`）在 beginWork 时 `pushProvider` 把新 value 压栈（`ReactFiberNewContext.ts`，基于 7.0 的通用栈），`context._currentValue` 立刻更新为新值；`completeWork` 归的时候 `popProvider` 恢复旧值
+- [x] 消费：函数组件 `useContext(context)` 走 `ReactFiberHooks.ts` 的 dispatcher（mount/update 两个阶段都直接是 `readContext`，语义上不区分 mount/update）；`<Context.Consumer>`（render prop 写法）走 `updateContextConsumer`，同样调用 `readContext`
+  - `readContext`（`ReactFiberNewContext.ts`）读取 `context._currentValue` 并把这次读取记录追加到 `currentlyRenderingFiber.dependencies` 链表上，供 7.2 的传播判断使用
+  - 简化范围：不支持 class 组件 `contextType`（Phase 8 落地 class 组件时再补）
 
 #### 7.2 context 变化时的传播与 bailout 兼容
 
-- Provider 的 value 变化时，标记子树中所有消费该 context 的 Fiber 需要更新
-- context 与 bailout 策略联动：无 context 消费时跳过子树渲染（基础 bailout 已实现，需补 dependencies 记录 context 依赖）
+- [x] Provider 的 value 变化时（`is(oldValue, newValue)` 为 false），`propagateContextChange`（`ReactFiberNewContext.ts`，对照官方 `propagateContextChange_eager`）从 Provider 子树里查找 `dependencies` 含该 context 的 fiber，标记其 `lanes` 需要在本次 `renderLanes` 下重渲染，并沿 `return` 链把 lane 冒泡到祖先的 `childLanes`（`scheduleContextWorkOnParentPath`）
+- [x] context 与 bailout 联动：`FiberNode.dependencies`（`ReactInternalTypes.ts` 的 `Dependencies`/`ContextItem`）记录本次渲染读取过的 context 列表；`prepareToReadContext` 在每次函数组件渲染前重置收集状态，若复用的 dependencies.lanes 命中本次 renderLanes 则 `markWorkInProgressReceivedUpdate`
+- [x] `attemptEarlyBailoutIfNoScheduledUpdate` 里 ContextProvider 分支即使自身 bailout 也要 `pushProvider`（子树读到的 `_currentValue` 必须是新值，否则会栈错位）
 
-**阶段目标验收**：Provider 更新 value 后，消费该 context 的子组件自动重渲染。
+**简化范围**（渐进式搭建，明确取舍）：
+
+- 只支持单一渲染器（react-dom），不做官方为兼容双渲染器（如 RN 主 + Fabric 副渲染器）准备的 `_currentValue2`/`isPrimaryRenderer` 分支
+- 只做 eager 传播（`propagateContextChange`），不做官方 `enableLazyContextPropagation` 分支——该 flag 官方默认也是 `false`，两者行为一致
+- 不做 legacy context（class 组件 `contextTypes`/`childContextTypes`）、`DehydratedFragment`（Suspense）、ClassComponent 强制更新分支（均依赖尚未落地的 Phase 8/9）
+- `Consumer` 不做官方 DEV 专属的警告代理对象（`<Context.Consumer.Provider>` 误用警告等），直接复用 Provider 所属的同一个 context 引用（对齐官方 PROD 行为）
+
+**阶段目标验收**：Provider 更新 value 后，消费该 context 的子组件自动重渲染，不消费该 context 的兄弟组件不重渲染（`fixtures/context`）。
 
 ---
 

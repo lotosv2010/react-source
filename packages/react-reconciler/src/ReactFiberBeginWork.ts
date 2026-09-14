@@ -3,6 +3,9 @@
  * @description 对每个 Fiber 执行"递"阶段：根据 tag 分发，计算新 props/state，reconcile 出子 fiber
  */
 
+import is from "shared/objectIs";
+import type { ReactContext, ReactProviderType } from "shared/ReactTypes";
+
 import {
   cloneChildFibers,
   mountChildFibers,
@@ -17,6 +20,14 @@ import { DidCapture, NoFlags, PerformedWork } from "./ReactFiberFlags";
 import { NoLanes, includesSomeLane, type Lanes } from "./ReactFiberLane";
 import { renderWithHooks } from "./ReactFiberHooks";
 import {
+  prepareToReadContext,
+  propagateContextChange,
+  pushProvider,
+  readContext,
+} from "./ReactFiberNewContext";
+import {
+  ContextConsumer,
+  ContextProvider,
   Fragment,
   FunctionComponent,
   HostComponent,
@@ -74,6 +85,7 @@ function mountIndeterminateComponent(
 ): FiberNode | null {
   const props = workInProgress.pendingProps;
 
+  prepareToReadContext(workInProgress, renderLanes);
   const value = renderWithHooks(
     null,
     workInProgress,
@@ -99,6 +111,7 @@ function updateFunctionComponent(
   nextProps: any,
   renderLanes: Lanes,
 ): FiberNode | null {
+  prepareToReadContext(workInProgress, renderLanes);
   const nextChildren = renderWithHooks(
     current,
     workInProgress,
@@ -186,6 +199,65 @@ function updateMode(
   return workInProgress.child;
 }
 
+// 对照官方 updateContextProvider：把新 value 压栈（子树渲染期间 context._currentValue
+// 就是这个新值），value 变化时用 propagateContextChange 主动标记消费该 context 的子树；
+// value 没变且 children 引用也没变时可以直接 bailout。
+function updateContextProvider(
+  current: FiberNode | null,
+  workInProgress: FiberNode,
+  renderLanes: Lanes,
+): FiberNode | null {
+  const providerType: ReactProviderType<any> = workInProgress.type;
+  const context: ReactContext<any> = providerType._context;
+
+  const newProps = workInProgress.pendingProps;
+  const oldProps = workInProgress.memoizedProps;
+  const newValue = newProps.value;
+
+  pushProvider(workInProgress, context, newValue);
+
+  if (current !== null && oldProps !== null) {
+    const oldValue = oldProps.value;
+    if (is(oldValue, newValue)) {
+      if (oldProps.children === newProps.children) {
+        return bailoutOnAlreadyFinishedWork(
+          current,
+          workInProgress,
+          renderLanes,
+        );
+      }
+    } else {
+      // value 变了，主动查找子树里消费该 context 的 fiber 并标记需要重渲染
+      propagateContextChange(workInProgress, context, renderLanes);
+    }
+  }
+
+  const newChildren = newProps.children;
+  reconcileChildren(current, workInProgress, newChildren, renderLanes);
+  return workInProgress.child;
+}
+
+// 对照官方 updateContextConsumer：<Context.Consumer> 的 children 是一个接收 context 当前值
+// 的函数（render prop 模式），本项目暂不实现 class 组件 contextType，useContext 走
+// ReactFiberHooks 的 dispatcher，不经过这里。
+function updateContextConsumer(
+  current: FiberNode | null,
+  workInProgress: FiberNode,
+  renderLanes: Lanes,
+): FiberNode | null {
+  const context: ReactContext<any> = workInProgress.type;
+  const newProps = workInProgress.pendingProps;
+  const render = newProps.children;
+
+  prepareToReadContext(workInProgress, renderLanes);
+  const newValue = readContext(context);
+  const newChildren = render(newValue);
+
+  workInProgress.flags |= PerformedWork;
+  reconcileChildren(current, workInProgress, newChildren, renderLanes);
+  return workInProgress.child;
+}
+
 // legacy context 未实现，恒返回 false（官方在 hasLegacyContextChanged 里对比 context 栈）
 function hasLegacyContextChanged(): boolean {
   return false;
@@ -205,8 +277,14 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
   workInProgress: FiberNode,
   renderLanes: Lanes,
 ): FiberNode | null {
-  // 官方这里会按 tag 把 host context / provider 等压栈。Phase 2/3 的 host config 没有
-  // context 栈（getHostContext 恒返回空对象），压栈操作先省略，react-dom 落地时补。
+  // 官方这里还会按 tag 压栈 host context 等，Phase 2/3 的 host config 没有对应的栈
+  // （getHostContext 恒返回空对象），先省略，react-dom 落地时补。ContextProvider 的栈
+  // 必须压——即使这个 fiber 本身 bailout，子树读到的 context._currentValue 也得是新值。
+  if (workInProgress.tag === ContextProvider) {
+    const newValue = workInProgress.memoizedProps.value;
+    const context: ReactContext<any> = workInProgress.type._context;
+    pushProvider(workInProgress, context, newValue);
+  }
   return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
 }
 
@@ -300,6 +378,10 @@ function beginWork(
       return updateFragment(current, workInProgress, renderLanes);
     case Mode:
       return updateMode(current, workInProgress, renderLanes);
+    case ContextProvider:
+      return updateContextProvider(current, workInProgress, renderLanes);
+    case ContextConsumer:
+      return updateContextConsumer(current, workInProgress, renderLanes);
   }
 
   throw new Error(

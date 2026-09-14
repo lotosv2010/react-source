@@ -51,6 +51,7 @@ import {
   higherEventPriority,
   setCurrentUpdatePriority,
 } from "./ReactEventPriorities";
+import { readContext } from "./ReactFiberNewContext";
 
 const ReactCurrentDispatcher = ReactSharedInternals.ReactCurrentDispatcher;
 const ReactCurrentBatchConfig = ReactSharedInternals.ReactCurrentBatchConfig;
@@ -820,6 +821,7 @@ const ContextOnlyDispatcher = {
   useTransition: throwInvalidHookError,
   useDeferredValue: throwInvalidHookError,
   useSyncExternalStore: throwInvalidHookError,
+  useContext: throwInvalidHookError,
 };
 
 const HooksDispatcherOnMount = {
@@ -833,6 +835,9 @@ const HooksDispatcherOnMount = {
   useTransition: mountTransition,
   useDeferredValue: mountDeferredValue,
   useSyncExternalStore: mountSyncExternalStore,
+  // useContext 不区分 mount/update：读取的是当前 context 值，不依赖上次渲染的 hook 状态
+  // （官方两个 dispatcher 里都是同一个 readContext），不需要额外的 mountContext 包装
+  useContext: readContext,
 };
 
 const HooksDispatcherOnUpdate = {
@@ -846,6 +851,7 @@ const HooksDispatcherOnUpdate = {
   useTransition: updateTransition,
   useDeferredValue: updateDeferredValue,
   useSyncExternalStore: updateSyncExternalStore,
+  useContext: readContext,
 };
 
 // 对照官方 renderWithHooks：渲染前重置 hook 相关模块状态、按 mount/update 切换 dispatcher，

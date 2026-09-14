@@ -31,3 +31,33 @@ export type Props = Record<string, any>;
  * reconciler 落地前先用 any 兜底
  */
 export type ElementType = any;
+
+/**
+ * createContext(defaultValue) 返回的 Context 对象
+ * 对照官方 ReactTypes.js 的 ReactContext：本项目只支持单一渲染器（react-dom），
+ * 省略官方为兼容双渲染器（Primary/Secondary，如 RN + Fabric）准备的 _currentValue2/
+ * _currentRenderer2 字段，Consumer 也不做 DEV 专属的警告代理对象，直接复用 Provider
+ * 所属的同一个 context 引用。
+ *
+ * 调用签名 `(props): any` 纯粹是给 TS 的 JSX 检查用的——<Context.Consumer> 运行时靠
+ * $$typeof 分发到 ContextConsumer tag，并不会真的把 context 对象当函数调用。
+ */
+export interface ReactContext<T> {
+  $$typeof: symbol;
+  _currentValue: T;
+  Provider: ReactProviderType<T>;
+  Consumer: ReactContext<T>;
+  displayName?: string;
+  (props: { children: (value: T) => any }): any;
+}
+
+/**
+ * Context.Provider 元素的类型标识对象
+ * _context 指回所属的 Context，供 beginWork 取 context._currentValue 读写
+ * 调用签名同样只为满足 TS 的 JSX 元素类型检查，见上方 ReactContext 的说明。
+ */
+export interface ReactProviderType<T> {
+  $$typeof: symbol;
+  _context: ReactContext<T>;
+  (props: { value: T; children?: any }): any;
+}

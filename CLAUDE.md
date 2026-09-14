@@ -46,9 +46,9 @@ monorepo 骨架、reconciler 主链路（同步 + 并发）、react-dom 简版�
 - 工具链：ESLint + Prettier（lint/格式化）、Husky + lint-staged + commitlint（提交检查）、Rollup（构建）、Vite（fixtures 源码调试）
 - `packages/shared`：跨包共享工具/常量/类型（objectIs、hasOwnProperty、ReactSymbols、ReactTypes 等）
 - `packages/react`：JSX 运行时（createElement/jsx/jsxDEV + jsx-runtime/jsx-dev-runtime 入口），构建产出 cjs（dev+prod）和 iife 三种格式
-- `packages/react-reconciler`：Fiber 主链路——Fiber 数据结构、更新队列、beginWork/completeWork、commit mutation、单/多节点 diff、Fragment、Fiber 树反射（`reflection.ts` 转出 `findCurrentHostFiber`）、**完整 Lane 模型 + 可中断 workLoop**（`ensureRootIsScheduled`/`workLoopConcurrent`/`flushSync`）、HostConfig 接口（**构建时 fork 注入**，对齐官方 forks.js）
+- `packages/react-reconciler`：Fiber 主链路——Fiber 数据结构、更新队列、beginWork/completeWork、commit mutation、单/多节点 diff、Fragment、Fiber 树反射（`reflection.ts` 转出 `findCurrentHostFiber`）、**完整 Lane 模型 + 可中断 workLoop**（`ensureRootIsScheduled`/`workLoopConcurrent`/`flushSync`）、HostConfig 接口（**构建时 fork 注入**，对齐官方 forks.js）、**Hooks**（useState/useReducer/useRef/useMemo/useCallback/useEffect/useLayoutEffect/useTransition/useDeferredValue/useSyncExternalStore/useContext）、**Context API**（`ReactFiberStack.ts` 通用栈 + `ReactFiberNewContext.ts` 的 pushProvider/popProvider/readContext/propagateContextChange）
 - `packages/react-dom`（简版）：`createRoot(container).render(element)` 渲染到真实 DOM（DefaultLane 并发异步提交）；HostConfig 由 build.js 的 fork 插件 / vite alias 把 `ReactFiberConfig` 替换为 `packages/react-dom-bindings` 的 `ReactDOMHostConfig`；npm 分发文件夹 + bundles.js 注册（cjs dev/prod）。简版边界：不含 hydrate / legacy render / 事件系统 / shouldSetTextContent 优化
 - `packages/scheduler`（对照官方完整结构）：`unstable_scheduleCallback`/`unstable_shouldYield` 等导出、taskQueue/timerQueue 双最小堆、MessageChannel 宏任务 + 5ms 时间片、`SchedulerHostConfig` 构建时 fork 注入
 - 常用命令：`pnpm dev`（fixtures 调试）、`pnpm lint` / `pnpm lint:fix`、`pnpm format` / `pnpm format:check`、`pnpm build`、`npx tsc --noEmit`
 
-`hooks` / `事件系统` / `context` / `class 生命周期` 尚未创建，按渲染链路推进顺序逐个搭建。详细进度见 [docs/roadmap.md](./docs/roadmap.md)；React 核心原理（分层架构、Fiber/Lane/Diff/Hooks 等知识点 + Mermaid 流程图）见 [docs/react-core.md](./docs/react-core.md)。
+`hooks` / `事件系统` / `context` 已落地；`class 生命周期` 尚未创建，按渲染链路推进顺序逐个搭建（当前从 Phase 8 Class 组件生命周期继续）。详细进度见 [docs/roadmap.md](./docs/roadmap.md)；React 核心原理（分层架构、Fiber/Lane/Diff/Hooks 等知识点 + Mermaid 流程图）见 [docs/react-core.md](./docs/react-core.md)。

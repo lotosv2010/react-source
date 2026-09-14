@@ -8,9 +8,12 @@ import type { ElementType, Key, Props, Ref } from "shared/ReactTypes";
 
 import { NoFlags, StaticMask, type Flags } from "./ReactFiberFlags";
 import { NoLanes, type Lanes } from "./ReactFiberLane";
+import type { Dependencies } from "./ReactInternalTypes";
 import { ConcurrentRoot, type RootTag } from "./ReactRootTags";
 import { ConcurrentMode, NoMode, type TypeOfMode } from "./ReactTypeOfMode";
 import {
+  ContextConsumer,
+  ContextProvider,
   Fragment,
   HostComponent,
   HostRoot,
@@ -18,6 +21,7 @@ import {
   IndeterminateComponent,
   type WorkTag,
 } from "./ReactWorkTags";
+import { REACT_PROVIDER_TYPE, REACT_CONTEXT_TYPE } from "shared/ReactSymbols";
 
 // 对照官方 packages/react-reconciler/src/ReactFiber.new.js：FiberNode 官方不用 class（用
 // function 构造器 + new），这里为了 TS 里字段声明更直观改用 class，字段集合和初始值保持一致。
@@ -43,7 +47,7 @@ export class FiberNode {
   memoizedProps: any;
   updateQueue: any;
   memoizedState: any;
-  dependencies: { lanes: Lanes; firstContext: any } | null;
+  dependencies: Dependencies | null;
 
   mode: TypeOfMode;
 
@@ -220,6 +224,22 @@ export function createFiberFromTypeAndProps(
     fiberTag = HostComponent;
   } else if (type === REACT_FRAGMENT_TYPE) {
     return createFiberFromFragment(pendingProps.children, mode, lanes, key);
+  } else if (typeof type === "object" && type !== null) {
+    // <Context.Provider>/<Context.Consumer> 元素的 type 是 createContext 生成的
+    // Provider/Context 对象本身（不是函数），靠 $$typeof 区分（对照官方 getTag 分支）
+    switch (type.$$typeof) {
+      case REACT_PROVIDER_TYPE:
+        fiberTag = ContextProvider;
+        break;
+      case REACT_CONTEXT_TYPE:
+        fiberTag = ContextConsumer;
+        break;
+      default:
+        throw new Error(
+          `Element type is invalid: expected a string (for built-in components) ` +
+            `or a class/function (for composite components) but got: object.`,
+        );
+    }
   } else {
     throw new Error(
       `Element type is invalid: expected a string (for built-in components) ` +
