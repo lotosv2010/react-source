@@ -166,7 +166,9 @@
 - [x] **useDeferredValue**：mountDeferredValue/updateDeferredValue（`ReactFiberHooks.ts`），值变化且当前渲染含紧急 lane（`!includesOnlyNonUrgentLanes(renderLanes)`）时保留旧值、派生一条 deferred lane 稍后单独渲染；否则直接用新值
   - `requestDeferredLane` 简化为直接复用 `claimNextTransitionLane`（官方有独立的 `DeferredLane` 位，本项目 lane 位表未单独开一位，效果上仍能让 deferred 渲染独立成一条 lane）
   - 简化范围：不支持 `initialValue` 第二参数（配合 Suspense 预渲染场景，本项目暂无 Suspense）
-- **useSyncExternalStore**：commit 后同步校验外部 store 快照是否一致（tearing 检测），不一致则强制同步重渲染，是外部状态库适配并发特性的标准方案
+- [x] **useSyncExternalStore**：mountSyncExternalStore/updateSyncExternalStore（`ReactFiberHooks.ts`）。渲染时直接读一次 `getSnapshot()` 作为本次值（打破"只依赖参数/上次状态"的常规，只因 store 更新语义恒为同步）；`mountEffect` 挂一条订阅 effect（`subscribeToStore`，commit 后才真正调用外部 `subscribe`），另 `pushEffect` 一条不比较 deps 的 passive effect（`updateStoreInstance`），每次 commit 后同步 `inst` 缓存并补一次快照检查
+  - `subscribeToStore`/`updateStoreInstance` 检测到快照变化（`checkIfSnapshotChanged`）都调用 `forceStoreRerender`：新增 `enqueueConcurrentRenderForLane`（`ReactFiberConcurrentUpdates.ts`，只冒泡 lane、不携带 update 对象）+ `scheduleUpdateOnFiber`，强制走 `SyncLane` 同步重渲染
+  - 简化范围：不支持 `getServerSnapshot`（SSR/hydrate 明确不做，见 Phase 10）；不做官方 render 阶段被并发事件打断时的 `pushStoreConsistencyCheck` 一致性检查（依赖 commit 前整树扫描 `StoreConsistency` flag + 事件系统，Phase 6 才落地），只保留 `subscribeToStore` + `updateStoreInstance` 这条被动检测路径——足够覆盖"外部 store 变化触发重渲染"这个可验证的主路径
 - **useId**：基于组件树挂载路径生成跨 SSR/CSR 一致的唯一 id，依赖 Phase 4 未涉及的 treeContext（forkStack/idStack），Phase 9 做 hydrate 时一并补齐
 
 #### 5.3.1 ReactFiberConcurrentUpdates（并发更新入队）

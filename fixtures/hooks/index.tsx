@@ -6,9 +6,27 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   useTransition,
 } from "react";
 import { createRoot } from "react-dom/client";
+
+// useSyncExternalStore 验证：一个 React 外部的极简 store（订阅者集合 + 一个数字值），
+// 不经过 setState，直接在模块级修改 value 并通知订阅者，验证 subscribeToStore 接上后
+// store 变化能强制同步重渲染。
+let externalStoreValue = 0;
+const externalStoreListeners = new Set<() => void>();
+const externalStore = {
+  getSnapshot: () => externalStoreValue,
+  subscribe: (onStoreChange: () => void) => {
+    externalStoreListeners.add(onStoreChange);
+    return () => externalStoreListeners.delete(onStoreChange);
+  },
+  setValue: (next: number) => {
+    externalStoreValue = next;
+    externalStoreListeners.forEach((listener) => listener());
+  },
+};
 
 // Phase 5 验证：useState 管理计数器状态，setState → 重渲染 → DOM 更新。
 // 事件系统（onClick 等）留到 Phase 6，这里先用 setTimeout 直接调用 dispatch 函数
@@ -37,6 +55,14 @@ function Counter(): any {
       deferredCount,
     );
   }
+
+  // useSyncExternalStore：订阅模块级外部 store，不经过 setState 也应该能感知到 store 变化
+  // 并强制同步重渲染——验证 subscribeToStore/updateStoreInstance/forceStoreRerender 链路
+  const storeValue = useSyncExternalStore(
+    externalStore.subscribe,
+    externalStore.getSnapshot,
+  );
+  console.log("useSyncExternalStore storeValue：", storeValue);
 
   // renderCount 用 useRef 记录渲染次数：ref 不触发重渲染、跨渲染保持同一对象，
   // 与 count 的变化对比即可验证 mountRef/updateRef 是否真的跨渲染复用了同一个 { current }
@@ -124,6 +150,14 @@ function runHooksDemo(): void {
         });
         console.log("startTransition 调用后：", rootElement.innerHTML);
       }, 500);
+
+      // 不经过任何 React API，直接改外部 store 并通知订阅者：验证 subscribeToStore 接上后，
+      // handleStoreChange → checkIfSnapshotChanged → forceStoreRerender 能强制同步重渲染，
+      // 拿到最新的 storeValue
+      setTimeout(() => {
+        externalStore.setValue(externalStoreValue + 1);
+        console.log("外部 store 变更后：", rootElement.innerHTML);
+      }, 1000);
     }
   }, 1000);
 }

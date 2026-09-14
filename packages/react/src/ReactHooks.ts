@@ -129,3 +129,16 @@ export function useDeferredValue<T>(value: T): T {
   const dispatcher = resolveDispatcher();
   return dispatcher.useDeferredValue(value);
 }
+
+/**
+ * useSyncExternalStore() - 订阅一个 React 外部的状态源，store 变化时强制同步重渲染
+ * @param subscribe - 订阅函数，参数是"store 变化时调用"的回调，返回取消订阅函数
+ * @param getSnapshot - 读取当前 store 快照的函数
+ */
+export function useSyncExternalStore<T>(
+  subscribe: (onStoreChange: () => void) => () => void,
+  getSnapshot: () => T,
+): T {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useSyncExternalStore(subscribe, getSnapshot);
+}

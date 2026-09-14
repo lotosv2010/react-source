@@ -5,7 +5,8 @@
  * mount/update 切换 ReactCurrentDispatcher.current，组件体内调用的 useState/useReducer
  * 通过这个 dispatcher 找到对应的 mountXxx/updateXxx 实现。
  * 当前落地 useState/useReducer/useRef/useMemo/useCallback/useEffect/useLayoutEffect/
- * useTransition/useDeferredValue；eagerState dispatch 侧优化见 Phase 9.4，均按官方结构逐步补齐。
+ * useTransition/useDeferredValue/useSyncExternalStore；eagerState dispatch 侧优化见
+ * Phase 9.4，useId 见 Phase 9，均按官方结构逐步补齐。
  */
 
 import ReactSharedInternals from "shared/ReactSharedInternals";
@@ -21,13 +22,17 @@ import {
   isSubsetOfLanes,
   mergeLanes,
   NoLane,
+  SyncLane,
   claimNextTransitionLane,
   includesOnlyNonUrgentLanes,
   type Lane,
   type Lanes,
 } from "./ReactFiberLane";
 import { markWorkInProgressReceivedUpdate } from "./ReactFiberBeginWork";
-import { enqueueConcurrentHookUpdate } from "./ReactFiberConcurrentUpdates";
+import {
+  enqueueConcurrentHookUpdate,
+  enqueueConcurrentRenderForLane,
+} from "./ReactFiberConcurrentUpdates";
 import {
   HasEffect as HookHasEffect,
   Layout as HookLayout,
@@ -614,6 +619,151 @@ function updateTransition(): [boolean, (callback: () => void) => void] {
   return [isPending, start];
 }
 
+// 对照官方 StoreInstance：缓存"最近一次已知的 store 值 + 读取它的函数"，供 commit 后（
+// updateStoreInstance）与 store 变化时（subscribeToStore 的 handleStoreChange）判断是否
+// 需要强制重渲染。挂在 hook.queue 上（借用字段名，不是真正的更新队列）。
+interface StoreInstance<T> {
+  value: T;
+  getSnapshot: () => T;
+}
+
+// 对照官方 mountSyncExternalStore：渲染时直接读一次 getSnapshot 作为这次渲染的值——这打破了
+// hook 通常"只依赖参数/前一次状态"的规则，只是因为 store 的更新语义上恒为同步，读到的值
+// 不会滞后于当前时刻。mountEffect 挂一个订阅 effect（commit 后才真正 subscribe），另外用
+// pushEffect 直接挂一个不比较 deps 的 passive effect（updateStoreInstance），每次 commit 后
+// 都同步 inst 的缓存字段，顺带检测 render→commit 这段窗口内 store 是否被改过。
+// 简化范围：不支持 getServerSnapshot（SSR/hydrate 明确不做，见 roadmap Phase 10）；不做官方
+// render 阶段被并发事件打断时的 pushStoreConsistencyCheck 一致性检查（依赖事件系统，
+// Phase 6 才落地），只保留 subscribeToStore + updateStoreInstance 这条"被动检测"路径。
+function mountSyncExternalStore<T>(
+  subscribe: (onStoreChange: () => void) => () => void,
+  getSnapshot: () => T,
+): T {
+  const fiber = currentlyRenderingFiber;
+  const hook = mountWorkInProgressHook();
+
+  const nextSnapshot = getSnapshot();
+  hook.memoizedState = nextSnapshot;
+  const inst: StoreInstance<T> = {
+    value: nextSnapshot,
+    getSnapshot,
+  };
+  hook.queue = inst as any;
+
+  mountEffect(subscribeToStore.bind(null, fiber, inst, subscribe), [subscribe]);
+
+  fiber.flags |= PassiveEffect;
+  pushEffect(
+    HookHasEffect | HookPassive,
+    updateStoreInstance.bind(null, fiber, inst, nextSnapshot, getSnapshot),
+    undefined,
+    null,
+  );
+
+  return nextSnapshot;
+}
+
+// 对照官方 updateSyncExternalStore：每次渲染都重新读 getSnapshot，与上次渲染的值比较——
+// 不同则 markWorkInProgressReceivedUpdate（这里没有 update 要处理，走的是"收到外部变化"
+// 的通用路径，而不是 dispatch 一条 update）。storeChanged 还要考虑 subscribe/getSnapshot
+// 函数引用本身是否变化：变了也要重新跑一次 updateStoreInstance 同步 inst 缓存。
+function updateSyncExternalStore<T>(
+  subscribe: (onStoreChange: () => void) => () => void,
+  getSnapshot: () => T,
+): T {
+  const fiber = currentlyRenderingFiber;
+  const hook = updateWorkInProgressHook();
+
+  const nextSnapshot = getSnapshot();
+  const prevSnapshot = (currentHook ?? hook).memoizedState;
+  const snapshotChanged = !is(prevSnapshot, nextSnapshot);
+  if (snapshotChanged) {
+    hook.memoizedState = nextSnapshot;
+    markWorkInProgressReceivedUpdate();
+  }
+  const inst: StoreInstance<T> = hook.queue as any;
+
+  updateEffect(subscribeToStore.bind(null, fiber, inst, subscribe), [
+    subscribe,
+  ]);
+
+  // 除了快照本身变化，subscribe 函数变了（上面 updateEffect 因 deps 变化重新打了
+  // HookHasEffect）也要重新跑一次 updateStoreInstance——借读刚 push 的订阅 effect 的 tag
+  // 判断，不用额外记录状态。
+  const storeChanged =
+    inst.getSnapshot !== getSnapshot ||
+    snapshotChanged ||
+    (workInProgressHook !== null &&
+      (workInProgressHook.memoizedState.tag & HookHasEffect) !== 0);
+
+  pushEffect(
+    storeChanged ? HookHasEffect | HookPassive : HookPassive,
+    updateStoreInstance.bind(null, fiber, inst, nextSnapshot, getSnapshot),
+    undefined,
+    null,
+  );
+
+  if (storeChanged) {
+    fiber.flags |= PassiveEffect;
+  }
+
+  return nextSnapshot;
+}
+
+// 对照官方 updateStoreInstance：在 passive effect 阶段（commit 后）运行，先把 inst 的缓存
+// 字段更新为本次渲染的值，再检查一次快照是否变化——render 与 commit 之间的空隙里，
+// store 可能已经被一次同步的外部变更修改过，此时 subscribeToStore 还没接上（订阅本身也是
+// 一个 effect），只能靠这里补一次检测。
+function updateStoreInstance<T>(
+  fiber: FiberNode,
+  inst: StoreInstance<T>,
+  nextSnapshot: T,
+  getSnapshot: () => T,
+): void {
+  inst.value = nextSnapshot;
+  inst.getSnapshot = getSnapshot;
+
+  if (checkIfSnapshotChanged(inst)) {
+    forceStoreRerender(fiber);
+  }
+}
+
+// 对照官方 subscribeToStore：commit 后才真正调用外部 subscribe，返回值即取消订阅函数
+// （直接作为这个 effect 的 destroy）。store 变化时先检查快照是否真的变了才强制重渲染，
+// 避免 subscribe 实现里"值没变也通知一次"的场景引发多余渲染。
+function subscribeToStore<T>(
+  fiber: FiberNode,
+  inst: StoreInstance<T>,
+  subscribe: (onStoreChange: () => void) => () => void,
+): (() => void) | void {
+  const handleStoreChange = (): void => {
+    if (checkIfSnapshotChanged(inst)) {
+      forceStoreRerender(fiber);
+    }
+  };
+  return subscribe(handleStoreChange);
+}
+
+function checkIfSnapshotChanged<T>(inst: StoreInstance<T>): boolean {
+  const latestGetSnapshot = inst.getSnapshot;
+  const prevValue = inst.value;
+  try {
+    const nextValue = latestGetSnapshot();
+    return !is(prevValue, nextValue);
+  } catch {
+    return true;
+  }
+}
+
+// 对照官方 forceStoreRerender：store 语义上要求订阅者立刻看到最新值，强制走 SyncLane
+// 同步重渲染，不能被并发特性打断或推迟到更低优先级。
+function forceStoreRerender(fiber: FiberNode): void {
+  const root = enqueueConcurrentRenderForLane(fiber, SyncLane);
+  if (root !== null) {
+    scheduleUpdateOnFiber(root, fiber, SyncLane, requestEventTime());
+  }
+}
+
 // dispatchSetState/dispatchReducerAction 逻辑相同（本项目暂不做 eagerState 优化，见 Phase 9.4），
 // 保留两个名字只是对照官方两套 hook 各自的 dispatch 入口命名。
 function enqueueHookUpdate<S, A>(
@@ -669,6 +819,7 @@ const ContextOnlyDispatcher = {
   useLayoutEffect: throwInvalidHookError,
   useTransition: throwInvalidHookError,
   useDeferredValue: throwInvalidHookError,
+  useSyncExternalStore: throwInvalidHookError,
 };
 
 const HooksDispatcherOnMount = {
@@ -681,6 +832,7 @@ const HooksDispatcherOnMount = {
   useLayoutEffect: mountLayoutEffect,
   useTransition: mountTransition,
   useDeferredValue: mountDeferredValue,
+  useSyncExternalStore: mountSyncExternalStore,
 };
 
 const HooksDispatcherOnUpdate = {
@@ -693,6 +845,7 @@ const HooksDispatcherOnUpdate = {
   useLayoutEffect: updateLayoutEffect,
   useTransition: updateTransition,
   useDeferredValue: updateDeferredValue,
+  useSyncExternalStore: updateSyncExternalStore,
 };
 
 // 对照官方 renderWithHooks：渲染前重置 hook 相关模块状态、按 mount/update 切换 dispatcher，

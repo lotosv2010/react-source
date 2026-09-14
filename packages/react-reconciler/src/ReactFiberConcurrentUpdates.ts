@@ -135,6 +135,18 @@ export function enqueueConcurrentClassUpdate(
   return getRootForUpdatedFiber(fiber);
 }
 
+/**
+ * useSyncExternalStore 的强制重渲染入口：只需要把 lane 冒泡到 root，不携带真正的
+ * update 对象（没有 state 要处理，重渲染本身就是为了重新读一次 getSnapshot）
+ */
+export function enqueueConcurrentRenderForLane(
+  fiber: FiberNode,
+  lane: Lane,
+): FiberRootNode | null {
+  enqueueUpdate(fiber, null, null, lane);
+  return getRootForUpdatedFiber(fiber);
+}
+
 // 对照官方 getRootForUpdatedFiber：沿 return 指针一路走到根，取 HostRoot fiber 的
 // stateNode（即 FiberRootNode）。这一步不依赖 update 是否已经真正入队，纯粹是结构遍历。
 function getRootForUpdatedFiber(sourceFiber: FiberNode): FiberRootNode | null {

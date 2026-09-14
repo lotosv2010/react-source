@@ -13,6 +13,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   useTransition,
 } from "./ReactHooks";
 import ReactSharedInternals from "./ReactSharedInternals";
@@ -32,6 +33,7 @@ export {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   useTransition,
 };
 
@@ -54,4 +56,5 @@ export default {
   useLayoutEffect,
   useTransition,
   useDeferredValue,
+  useSyncExternalStore,
 };
