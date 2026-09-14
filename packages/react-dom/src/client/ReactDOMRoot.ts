@@ -16,6 +16,7 @@ import {
   setRootHostContainer,
   type Container,
 } from "react-dom-bindings/src/client/ReactDOMHostConfig";
+import { listenToAllSupportedEvents } from "react-dom-bindings/src/events/DOMPluginEventSystem";
 
 export interface RootType {
   render(children: any): void;
@@ -45,5 +46,8 @@ export function createRoot(container: Container, _options?: unknown): RootType {
   // 再 createContainer 构造 HostRoot fiber。官方用 ConcurrentRoot 作为 createRoot 的根模式。
   setRootHostContainer(container);
   const root = createContainer(container, ConcurrentRoot);
+  // 事件委托：在根容器上一次性注册所有支持的原生事件监听器（capture+bubble），
+  // 具体某个 DOM 节点是否真的挂了 onClick 等，交给事件分发时按需读取 props
+  listenToAllSupportedEvents(container);
   return new ReactDOMRoot(root);
 }

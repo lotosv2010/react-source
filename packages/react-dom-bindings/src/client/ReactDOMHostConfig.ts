@@ -3,24 +3,29 @@
  * @description reconciler 通过 HostConfig 与具体渲染器解耦，react-dom 构建时通过 fork
  * 把本模块注入 reconciler（替换掉只抛错的 ReactFiberConfig 占位模块）。这里只覆盖
  * 同步主链路（挂载/更新/删除）用得到的方法子集，属性处理只做 className/style/普通字符串
- * 属性的简版（事件 on* 暂忽略、dangerouslySetInnerHTML/布尔属性等 DOMPropertyOperations
- * 完整体系留到后续 Phase 再补）。
+ * 属性的简版（dangerouslySetInnerHTML/布尔属性等 DOMPropertyOperations 完整体系留到后续
+ * Phase 再补）。事件处理器（on*）不再在这里处理——Phase 6 事件系统落地后，setProp 直接
+ * 跳过函数类型的 prop（不当成 DOM 属性设置），真正的监听靠 updateFiberProps 存到
+ * ReactDOMComponentTree 的 WeakMap 上，由事件委托系统统一读取分发。
  *
  * 对照官方 ReactFiberConfigDOM.js：Container 官方是 Element | Document | DocumentFragment
  * 的联合类型（各自可挂 _reactRootContainer）。本项目简版只支持挂载到 Element，不含
  * document/DocumentFragment 作为根容器，也不挂 _reactRootContainer 引用。
  */
 
+import { precacheFiberNode, updateFiberProps } from "./ReactDOMComponentTree";
+
 export type Container = Element;
 
 // 属性设置/对比只覆盖主链路用得到的子集（className/style/普通字符串属性），
-// 不是 react-dom DOMPropertyOperations 的完整还原（事件、dangerouslySetInnerHTML、
-// 布尔属性等留到对应 Phase 再补）。事件处理器（on*）直接忽略——事件系统 Phase 6 才落地。
+// 不是 react-dom DOMPropertyOperations 的完整还原（dangerouslySetInnerHTML、布尔属性等
+// 留到对应 Phase 再补）。事件处理器（on*）不当 DOM 属性设置，真正的监听走事件委托系统。
 
 /** 设置单个属性到 DOM 元素 */
 function setProp(domElement: Element, propKey: string, value: any): void {
   if (typeof value === "function") {
-    // 事件处理器（onClick 等）：事件系统尚未实现，先忽略
+    // 事件处理器（onClick 等）不当 DOM 属性设置——真正的监听靠 createInstance/commitUpdate
+    // 调用 updateFiberProps 存下整份 props，事件委托系统按 registrationName 现取现读
     return;
   }
   if (propKey === "style" && typeof value === "object" && value !== null) {
@@ -106,11 +111,14 @@ export function createInstance(
   props: Record<string, any>,
   rootContainerInstance: Container,
   _hostContext: unknown,
-  _internalInstanceHandle: unknown,
+  internalInstanceHandle: any,
 ): Element {
   const ownerDocument = rootContainerInstance.ownerDocument || document;
   const domElement = ownerDocument.createElement(type);
   setInitialProperties(domElement, props);
+  // 事件系统靠这两份映射反查 DOM 节点对应的 Fiber、以及取当前 props 上的监听器
+  precacheFiberNode(internalInstanceHandle, domElement);
+  updateFiberProps(domElement, props);
   return domElement;
 }
 
@@ -118,10 +126,12 @@ export function createTextInstance(
   text: string,
   rootContainerInstance: Container,
   _hostContext: unknown,
-  _internalInstanceHandle: unknown,
+  internalInstanceHandle: any,
 ): Text {
   const ownerDocument = rootContainerInstance.ownerDocument || document;
-  return ownerDocument.createTextNode(text);
+  const textNode = ownerDocument.createTextNode(text);
+  precacheFiberNode(internalInstanceHandle, textNode);
+  return textNode;
 }
 
 export function appendInitialChild(
@@ -159,7 +169,7 @@ export function commitUpdate(
   updatePayload: any[],
   _type: string,
   _oldProps: Record<string, any>,
-  _newProps: Record<string, any>,
+  newProps: Record<string, any>,
   _internalInstanceHandle: unknown,
 ): void {
   for (let i = 0; i < updatePayload.length; i += 2) {
@@ -167,6 +177,7 @@ export function commitUpdate(
     const propValue = updatePayload[i + 1];
     setProp(instance, propKey, propValue);
   }
+  updateFiberProps(instance, newProps);
 }
 
 export function commitTextUpdate(

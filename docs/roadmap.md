@@ -173,9 +173,9 @@
 
 #### 5.3.1 ReactFiberConcurrentUpdates（并发更新入队）
 
-- `packages/react-reconciler/src/ReactFiberConcurrentUpdates.ts`（官方同名文件，Phase 4 接入 Scheduler 时暂未还原，Hooks 落地时一起补）
-  - `enqueueConcurrentHookUpdate` / `enqueueConcurrentClassUpdate`：并发渲染期间的 update 先记录到一个全局队列，而非直接挂到 fiber 上，避免渲染中的 fiber 树被并发事件污染
-  - `finishQueueingConcurrentUpdates`：commit 前统一把暂存的 update 刷回各自 fiber 的 updateQueue，并同时把 lane 冒泡到 root（对应本项目当前 `markUpdateLaneFromFiberToRoot` 的即时冒泡，Hooks 阶段需要切到这套延迟入队模型）
+- [x] `packages/react-reconciler/src/ReactFiberConcurrentUpdates.ts`（官方同名文件，Phase 4 接入 Scheduler 时暂未还原，Hooks 落地时一起补齐）
+  - `enqueueConcurrentHookUpdate` / `enqueueConcurrentClassUpdate` / `enqueueConcurrentRenderForLane`：并发渲染期间的 (fiber, queue, update, lane) 四元组先平铺记录到模块级数组 `concurrentQueues`，而非直接挂到 fiber 的 updateQueue 上，避免渲染中的 workInProgress 树被并发触发的 update 污染；`fiber.lanes`/`alternate.lanes` 在入队时立刻更新（beginWork 的提前 bailout 判断需要马上可见），`childLanes` 冒泡则延迟
+  - `finishQueueingConcurrentUpdates`：统一把暂存的 update 刷回各自 fiber 的 updateQueue（接成 circular list），并调用迁移到本文件的 `markUpdateLaneFromFiberToRoot` 把 lane 冒泡到 root——取代了 `ReactFiberClassUpdateQueue.ts` 原先"入队即冒泡"的做法
 
 #### 5.4 调试方式（第三种）
 
@@ -194,29 +194,26 @@
 
 **目标**：实现合成事件（SyntheticEvent）和事件委托。
 
-#### 6.1 事件插件系统
+- [x] **6.1 事件插件系统**：新增 `packages/react-dom-bindings/src/events/`：
+  - `EventRegistry.ts`：`allNativeEvents` Set + `registerTwoPhaseEvent`/`registerDirectEvent`（同时注册冒泡版 `onXxx` 与捕获版 `onXxxCapture`）
+  - `DOMEventProperties.ts`：精简版 `topLevelEventsToReactNames` Map + `registerSimpleEvents()`（原生事件名 → React 注册名，如 `click` → `onClick`），模块加载时由 `DOMPluginEventSystem.ts` 顶层副作用调用
+  - `DOMEventNames.ts`：只列出常见交互事件（`click/dblclick/contextmenu/mousedown/mouseup/mousemove/mouseover/mouseout/keydown/keyup/keypress/focusin/focusout/input/change/submit`），覆盖 onClick/onChange/onKeyDown 等主流场景
+- [x] **6.2 事件委托（根节点监听）**：
+  - `client/ReactDOMComponentTree.ts`：新增 DOM 节点 ↔ Fiber / Props 的双向 WeakMap（`precacheFiberNode`/`updateFiberProps`/`getClosestInstanceFromNode`/`getFiberCurrentPropsFromNode`），`ReactDOMHostConfig.ts` 的 `createInstance`/`createTextInstance`/`commitUpdate` 接住之前忽略的 `internalInstanceHandle`/`newProps` 参数写入这套映射
+  - `DOMPluginEventSystem.ts` 的 `listenToAllSupportedEvents`：`ReactDOMRoot.ts` 的 `createRoot` 里调用，在根容器上给 `allNativeEvents` 里每个事件注册 capture+bubble 两个原生监听器（`_reactListening` 标记去重）
+  - `accumulateSinglePhaseListeners`：原生事件触发后，从 `getClosestInstanceFromNode` 反查出的 targetFiber 沿 `return` 链向上收集挂了对应 registrationName（`onClick` 或 `onClickCapture`，按当前阶段二选一）的 HostComponent 监听器
+  - `processDispatchQueueItemsInOrder`：捕获阶段倒序遍历（root→target）、冒泡阶段正序遍历（target→root），`isPropagationStopped()` 检查支持 `stopPropagation()` 提前退出
+- [x] **6.3 合成事件对象**：`SyntheticEvent.ts` 的 `createSyntheticEvent` 工厂模式（对照官方：用工厂而非单构造器+分支，避免引擎去优化），落地 4 种 Interface（基础 `SyntheticEvent`/`SyntheticMouseEvent`/`SyntheticKeyboardEvent`/`SyntheticFocusEvent`），`preventDefault`/`stopPropagation`/`isPropagationStopped`/`isDefaultPrevented`；不做事件池（对齐 React 17+ 现状）
+- [x] **6.4 事件优先级分发**：`ReactDOMEventListener.ts` 的 `createEventListenerWrapperWithPriority` 按 `getEventPriority` 选 `dispatchDiscreteEvent`/`dispatchContinuousEvent`（`setCurrentUpdatePriority` 包一层，复用 Phase 4 已有的 `ReactEventPriorities.ts`）
 
-- `packages/react-dom/src/events/EventRegistry.ts`
-  - 注册原生事件名到 React 事件名的映射（onClick → click）
-  - 区分冒泡/捕获阶段（onClickCapture）
+**简化范围**（渐进式搭建，明确取舍）：
 
-#### 6.2 事件委托（根节点监听）
+- 只落地 SimpleEventPlugin 这一条主链路，不做 EnterLeaveEventPlugin（onMouseEnter/Leave，用 onMouseOver/onMouseOut 代替）、ChangeEventPlugin/SelectEventPlugin/BeforeInputEventPlugin（跨浏览器兼容 polyfill）、FormActionEventPlugin、ScrollEndEventPlugin
+- 不做 hydration/Suspense 相关的 `findInstanceBlockingEvent` 阻塞重放逻辑（本项目无 hydrate，见 Phase 10）；不做 Portal 场景的祖先 fiber 重映射（本项目无 Portal）；不做 legacyFBSupport / non-delegated events / passive touch 特殊处理；不做受控组件状态回滚（`ReactDOMControlledComponent`）
+- **不引入官方的 `batchedUpdates`/`ReactDOMUpdateBatching.ts` 机制**：官方用它包裹事件分发主要是为受控组件回滚兜底、以及历史 legacy 模式的批处理保证。本项目 `ensureRootIsScheduled`（`ReactFiberWorkLoop.ts`）已经是"同 lane 重复调用直接早退 + SyncLane 走微任务统一 flush"，同一事件回调内连续多次 `setState` 只要停留在同一 lane，微任务 flush 前只会累积、不会重复提交——天然满足"多次 setState 只触发一次重渲染"的验收标准，不需要额外的 `BatchedContext` 包裹
+- `getListener.ts` 不做 `shouldPreventMouseEvent`（disabled 表单元素抑制鼠标事件）；`SyntheticEvent` 不做 `getModifierState`（跨浏览器修饰键归一化）
 
-- createRoot 时在 container 上注册所有支持的事件监听器（委托给根节点）
-- 原生事件触发 → 收集从 target 到 root 的 Fiber 路径（getEventTarget）
-- 模拟捕获/冒泡：遍历路径收集 props 上的事件回调，依次执行
-
-#### 6.3 合成事件对象
-
-- SyntheticEvent 包装原生 event，抹平浏览器差异
-- 事件池复用（React 17 后已移除池化，本项目可对照早期实现学习）
-
-#### 6.4 批量更新（事件回调中的 setState 自动批处理）
-
-- 依赖 Phase 4.3 的 executionContext（BatchedContext/EventContext）
-- 事件回调中的更新不立即 flush，收集到批次结束后统一 commit
-
-**阶段目标验收**：能够监听 onClick、onChange 等事件，事件回调中多次 setState 只触发一次重渲染。
+**阶段目标验收**：能够监听 onClick、onChange 等事件，事件回调中多次 setState 只触发一次重渲染（`fixtures/events`）。
 
 ---
 
