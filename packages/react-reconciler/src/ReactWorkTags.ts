@@ -8,7 +8,7 @@
 // 当前只列出主链路用得到的 tag（FunctionComponent/HostRoot/HostComponent/HostText/Fragment
 // 等），ClassComponent/Portal 等对应功能落地时再补，不提前铺数值。
 
-export type WorkTag = number;
+export type WorkTag = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
 export const FunctionComponent = 0;
 export const ClassComponent = 1;
