@@ -8,6 +8,7 @@ import runHooksDemo from "./hooks/index";
 import runEventsDemo from "./events/index";
 import runContextDemo from "./context/index";
 import runClassDemo from "./class/index";
+import runForwardRefMemoDemo from "./forwardref-memo/index";
 
 // react-dom 简版（createRoot）已落地，HostConfig 由构建时 fork 注入，
 // 这里先只验证 createElement/jsx 能不能正常产出 element 对象。
@@ -31,6 +32,9 @@ runContextDemo();
 
 // Class 组件验证：生命周期（挂载/更新/卸载）+ setState/forceUpdate + PureComponent（Phase 8）
 runClassDemo();
+
+// forwardRef/memo 验证：ref 转发到内部 DOM 节点 + 浅比较跳过重渲染（Phase 9.2）
+runForwardRefMemoDemo();
 
 const root = createRoot(document.getElementById("root")!);
 root.render(

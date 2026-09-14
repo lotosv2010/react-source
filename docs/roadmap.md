@@ -305,10 +305,19 @@
 
 #### 9.2 forwardRef / memo / lazy / Portal
 
-- **forwardRef**：转发 ref 到子组件（需补 markRef、coerceRef 字符串 ref 自动转换、Ref flag 的 commit 处理）
-- **memo**：浅比较 props，props 不变时跳过重渲染（需补 MemoComponent/SimpleMemoComponent tag 与 REACT_MEMO_TYPE）
-- **lazy**：动态 import 组件，配合 Suspense 实现代码分割（需补 REACT_LAZY_TYPE）
-- **Portal**：createPortal 将子树渲染到其他 DOM 节点（需补 HostPortal 的 commit 空壳分支）
+- [x] **forwardRef**（`packages/react/src/ReactForwardRef.ts` + reconciler 新增 `ForwardRef` WorkTag）：`forwardRef(render)` 返回 `{ $$typeof: REACT_FORWARD_REF_TYPE, render }`，`createFiberFromTypeAndProps`（`ReactFiber.ts`）按 `$$typeof` 分发出 `ForwardRef` tag；`updateForwardRef`（`ReactFiberBeginWork.ts`）是 `updateFunctionComponent` 的分支——`renderWithHooks` 新增 `secondArg` 参数（对照官方同名参数），只有 ForwardRef 会把 `workInProgress.ref` 透传给 `render(props, ref)`，其余组件类型传 `undefined`
+- [x] **markRef / commitAttachRef / commitDetachRef**（`ReactFiberBeginWork.ts` + `ReactFiberCommitWork.ts`）：`markRef` 在 `updateHostComponent`/`finishClassComponent` 里调用——ref 引用变化（mount 时非空，或 update 时与上次不同）才打 `Ref` flag（`ForwardRef`/`MemoComponent` 自身不调用，只是把 `workInProgress.ref` 转发给内部 fiber，由内部 fiber 的 tag 决定要不要 markRef）；`Ref` 并入 `LayoutMask`，`commitAttachRef` 挂载/更新时在 `commitLayoutEffectsOnFiber` 末尾统一按 flag 调用（函数形式调用 `ref(instance)`，对象形式 `ref.current = instance`），`commitDetachRef` 在 `commitMutationEffectsOnFiber` 的 `HostComponent`/`ClassComponent` 分支（ref 变化）和 `commitDeletionEffectsOnFiber`（整体卸载）里调用
+  - 简化范围：不做字符串 ref 的自动转换（`coerceRef`），`commitAttachRef`/`commitDetachRef` 遇到 `typeof ref === "string"` 直接跳过；`commitAttachRef` 对 HostComponent 不做官方的 `getPublicInstance` 包装（本项目 HostConfig 未实现该接口，直接用 `stateNode`，DOM 场景效果一致）
+- [x] **memo**（`packages/react/src/ReactMemo.ts` + reconciler 新增 `MemoComponent` WorkTag）：`memo(type, compare?)` 返回 `{ $$typeof: REACT_MEMO_TYPE, type, compare }`；`updateMemoComponent`（`ReactFiberBeginWork.ts`，简化版，不含官方 `SimpleMemoComponent` 快路径升级）mount 时直接用 `createFiberFromTypeAndProps` 建内部 fiber，update 时若无待处理更新/context，用 `compare`（默认 `shallowEqual`）比较新旧 props，props 相等且 `current.ref === workInProgress.ref` 才 bailout，否则 `createWorkInProgress` 克隆内部 fiber 继续渲染
+- **lazy**：动态 import 组件，配合 Suspense 实现代码分割（需补 REACT_LAZY_TYPE），依赖 9.1 Suspense，留待后续
+- **Portal**：createPortal 将子树渲染到其他 DOM 节点（需补 HostPortal 的 commit 空壳分支），留待后续
+
+**简化范围**（渐进式搭建，明确取舍）：
+
+- 不做 `SimpleMemoComponent` 快路径（官方在 `updateMemoComponent` 里探测"纯函数组件 + 无 compare + 无 defaultProps"时把 tag 升级为 `SimpleMemoComponent` 走更快的 bailout 路径），统一走 `MemoComponent`，效果一致只是少一层优化
+- 不做 `resolveDefaultProps`（`Component.defaultProps` 合并），forwardRef/memo 包装的组件不支持 `defaultProps`
+
+**验收**：`fixtures/forwardref-memo`——`forwardRef` 转发 ref 到内部 DOM 节点（点击按钮 focus 真实 input），`memo` 包裹的组件只在 props 变化时重渲染（renderCount 观察）
 
 #### 9.3 错误边界与异常处理
 

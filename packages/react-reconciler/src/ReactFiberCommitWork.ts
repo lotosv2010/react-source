@@ -10,6 +10,7 @@ import {
   MutationMask,
   PassiveMask,
   Placement,
+  Ref,
   Snapshot,
   Update,
 } from "./ReactFiberFlags";
@@ -36,11 +37,13 @@ import {
 } from "./ReactHookEffectTags";
 import {
   ClassComponent,
+  ForwardRef,
   FunctionComponent,
   HostComponent,
   HostPortal,
   HostRoot,
   HostText,
+  MemoComponent,
 } from "./ReactWorkTags";
 
 // 删除操作需要在向上回溯过程中临时记住"最近的 host 父节点"，官方用模块级变量在
@@ -103,6 +106,34 @@ function isHostParent(fiber: FiberNode): boolean {
     fiber.tag === HostRoot ||
     fiber.tag === HostPortal
   );
+}
+
+// 对照官方 commitAttachRef：ref 挂到 stateNode 上（函数形式调用 ref(instance)，对象形式赋
+// ref.current = instance）。HostComponent 官方还会转成 getPublicInstance(instance)（DOM 场景
+// 就是节点本身，本项目 HostConfig 未实现该接口，直接用 stateNode，效果一致）。
+// 字符串 ref 的自动转换未实现（对照 ReactFiber.ts 的取舍），这里不处理 string 分支。
+function commitAttachRef(finishedWork: FiberNode): void {
+  const ref = finishedWork.ref;
+  if (ref !== null && typeof ref !== "string") {
+    const instanceToUse = finishedWork.stateNode;
+    if (typeof ref === "function") {
+      ref(instanceToUse);
+    } else {
+      ref.current = instanceToUse;
+    }
+  }
+}
+
+// 对照官方 commitDetachRef：卸载/ref 变化时清空旧 ref（函数形式调用 ref(null)）
+function commitDetachRef(current: FiberNode): void {
+  const currentRef = current.ref;
+  if (currentRef !== null && typeof currentRef !== "string") {
+    if (typeof currentRef === "function") {
+      currentRef(null);
+    } else {
+      currentRef.current = null;
+    }
+  }
 }
 
 function getHostParentFiber(fiber: FiberNode): FiberNode {
@@ -274,8 +305,9 @@ function commitDeletionEffectsOnFiber(
 ): void {
   switch (deletedFiber.tag) {
     case HostComponent: {
-      // 官方这里先 safelyDetachRef（清 ref），随后故意 fall through 到 HostText 分支——
+      // 先清 ref，随后故意 fall through 到 HostText 分支——
       // 宿主的子节点由它自己整体移除，所以递归时把 hostParent 置空，避免子节点重复 remove
+      commitDetachRef(deletedFiber);
     }
     case HostText: {
       // 只需移除最近的宿主子节点：递归期间 hostParent 置空，嵌套的 host 节点不会各自 remove，
@@ -316,9 +348,13 @@ function commitDeletionEffectsOnFiber(
       );
       return;
     }
-    case FunctionComponent: {
+    case FunctionComponent:
+    case ForwardRef:
+    case MemoComponent: {
       // 整棵组件被卸载：不管 deps 上次是否变化（HookHasEffect 未打也要清理），
       // 所有 layout/passive effect 的 destroy 都必须执行一次，否则会漏清理订阅等资源
+      // （MemoComponent 本身没有 hook updateQueue，这里调用是安全的空操作，只为与官方
+      // case 分组保持一致，真正的清理发生在它包裹的内部 fiber 上）
       commitHookEffectListUnmount(HookLayout, deletedFiber);
       commitHookEffectListUnmount(HookPassive, deletedFiber);
       recursivelyTraverseDeletionEffects(
@@ -329,8 +365,9 @@ function commitDeletionEffectsOnFiber(
       return;
     }
     case ClassComponent: {
-      // 官方这里先 safelyDetachRef，再 safelyCallComponentWillUnmount（try/catch 包裹，
-      // 本项目错误边界未落地，直接调用，异常留给上层渲染调用方处理）
+      // 先清 ref，再调用 componentWillUnmount（本项目错误边界未落地，直接调用，
+      // 异常留给上层渲染调用方处理）
+      commitDetachRef(deletedFiber);
       const instance = deletedFiber.stateNode;
       if (typeof instance.componentWillUnmount === "function") {
         instance.componentWillUnmount();
@@ -480,6 +517,12 @@ function commitMutationEffectsOnFiber(
       recursivelyTraverseMutationEffects(root, finishedWork, lanes);
       commitReconciliationEffects(finishedWork);
 
+      if (flags & Ref) {
+        if (current !== null) {
+          commitDetachRef(current);
+        }
+      }
+
       if (flags & Update) {
         const instance = finishedWork.stateNode;
         if (instance != null) {
@@ -525,15 +568,29 @@ function commitMutationEffectsOnFiber(
       commitReconciliationEffects(finishedWork);
       return;
     }
-    case FunctionComponent: {
+    case FunctionComponent:
+    case ForwardRef:
+    case MemoComponent: {
       recursivelyTraverseMutationEffects(root, finishedWork, lanes);
       commitReconciliationEffects(finishedWork);
 
       // 对照官方：layout effect 的销毁提前到 mutation 阶段（销毁旧值），挂载则统一放到
       // commit 完全结束、root.current 已切换之后的 commitLayoutEffects——这样能保证一棵树里
       // 所有兄弟组件的销毁都先跑完，才轮到任何一个组件挂载新的 layout effect，不会互相干扰。
+      // MemoComponent 本身没有 hook updateQueue，这里调用是安全的空操作。
       if (flags & Update) {
         commitHookEffectListUnmount(HookLayout | HookHasEffect, finishedWork);
+      }
+      return;
+    }
+    case ClassComponent: {
+      recursivelyTraverseMutationEffects(root, finishedWork, lanes);
+      commitReconciliationEffects(finishedWork);
+
+      if (flags & Ref) {
+        if (current !== null) {
+          commitDetachRef(current);
+        }
       }
       return;
     }
@@ -590,7 +647,9 @@ function commitClassCallbacks(finishedWork: FiberNode): void {
 }
 
 // 对照官方 commitLayoutEffectsOnFiber：mutation 阶段结束、root.current 已切换之后的
-// 第二次遍历，只挂载 layout effect（销毁已经在 mutation 阶段做过了）。
+// 第二次遍历，只挂载 layout effect（销毁已经在 mutation 阶段做过了）。ref 的挂载
+// （commitAttachRef）统一放在 switch 之后按 Ref flag 判断，覆盖 HostComponent/ClassComponent/
+// ForwardRef 三种持有 stateNode/实例的 fiber（对照官方同一处理方式）。
 function commitLayoutEffectsOnFiber(
   root: FiberRootNode,
   finishedWork: FiberNode,
@@ -598,12 +657,14 @@ function commitLayoutEffectsOnFiber(
   const flags = finishedWork.flags;
 
   switch (finishedWork.tag) {
-    case FunctionComponent: {
+    case FunctionComponent:
+    case ForwardRef:
+    case MemoComponent: {
       recursivelyTraverseLayoutEffects(root, finishedWork);
       if (flags & Update) {
         commitHookEffectListMount(HookLayout | HookHasEffect, finishedWork);
       }
-      return;
+      break;
     }
     case ClassComponent: {
       recursivelyTraverseLayoutEffects(root, finishedWork);
@@ -625,12 +686,16 @@ function commitLayoutEffectsOnFiber(
       if (flags & Callback) {
         commitClassCallbacks(finishedWork);
       }
-      return;
+      break;
     }
     default: {
       recursivelyTraverseLayoutEffects(root, finishedWork);
-      return;
+      break;
     }
+  }
+
+  if (flags & Ref) {
+    commitAttachRef(finishedWork);
   }
 }
 
@@ -664,7 +729,8 @@ function commitPassiveMountOnFiber(
   const flags = finishedWork.flags;
 
   switch (finishedWork.tag) {
-    case FunctionComponent: {
+    case FunctionComponent:
+    case ForwardRef: {
       recursivelyTraversePassiveMountEffects(root, finishedWork);
       if (flags & Update) {
         commitHookEffectListMount(HookPassive | HookHasEffect, finishedWork);
@@ -705,7 +771,8 @@ function commitPassiveUnmountOnFiber(finishedWork: FiberNode): void {
   const flags = finishedWork.flags;
 
   switch (finishedWork.tag) {
-    case FunctionComponent: {
+    case FunctionComponent:
+    case ForwardRef: {
       recursivelyTraversePassiveUnmountEffects(finishedWork);
       if (flags & Update) {
         commitHookEffectListUnmount(HookPassive | HookHasEffect, finishedWork);

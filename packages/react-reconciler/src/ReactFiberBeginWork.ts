@@ -5,6 +5,7 @@
 
 import is from "shared/objectIs";
 import type { ReactContext, ReactProviderType } from "shared/ReactTypes";
+import shallowEqual from "shared/shallowEqual";
 
 import {
   cloneChildFibers,
@@ -20,8 +21,12 @@ import {
   mountClassInstance,
   updateClassInstance,
 } from "./ReactFiberClassComponent";
-import type { FiberNode } from "./ReactFiber";
-import { DidCapture, NoFlags, PerformedWork } from "./ReactFiberFlags";
+import {
+  createFiberFromTypeAndProps,
+  createWorkInProgress,
+  type FiberNode,
+} from "./ReactFiber";
+import { DidCapture, NoFlags, PerformedWork, Ref } from "./ReactFiberFlags";
 import { NoLanes, includesSomeLane, type Lanes } from "./ReactFiberLane";
 import { renderWithHooks } from "./ReactFiberHooks";
 import {
@@ -34,12 +39,14 @@ import {
   ClassComponent,
   ContextConsumer,
   ContextProvider,
+  ForwardRef,
   Fragment,
   FunctionComponent,
   HostComponent,
   HostRoot,
   HostText,
   IndeterminateComponent,
+  MemoComponent,
   Mode,
 } from "./ReactWorkTags";
 
@@ -47,6 +54,19 @@ import {
 // 官方用 didReceiveUpdate 在 dispatch 顶层与各 update* 分支之间传递"是否要重渲染"的信号，
 // 函数组件渲染结束后据此决定是 bailout 还是继续 reconcile children。
 let didReceiveUpdate = false;
+
+// 对照官方 markRef：ref 引用变化（mount 时非空，或 update 时与上次不同）才打 Ref flag，
+// commit 阶段的 commitAttachRef/commitDetachRef 据此决定要不要挂载/卸载 ref。
+// HostComponent/ClassComponent/ForwardRef 三种能持有 stateNode/实例的 fiber 会调用它。
+function markRef(current: FiberNode | null, workInProgress: FiberNode): void {
+  const ref = workInProgress.ref;
+  if (
+    (current === null && ref !== null) ||
+    (current !== null && current.ref !== ref)
+  ) {
+    workInProgress.flags |= Ref;
+  }
+}
 
 /**
  * 对比 current 与新 children，决定复用/新建/删除子 fiber
@@ -118,6 +138,7 @@ function mountIndeterminateComponent(
     workInProgress,
     Component,
     props,
+    undefined,
     renderLanes,
   );
 
@@ -139,6 +160,9 @@ function finishClassComponent(
   shouldUpdate: boolean,
   renderLanes: Lanes,
 ): FiberNode | null {
+  // ref 即使 shouldComponentUpdate 拦下了本次渲染也要更新（官方注释同此）
+  markRef(current, workInProgress);
+
   if (!shouldUpdate) {
     return bailoutOnAlreadyFinishedWork(
       current as FiberNode,
@@ -193,6 +217,7 @@ function updateFunctionComponent(
     workInProgress,
     Component,
     nextProps,
+    undefined,
     renderLanes,
   );
 
@@ -204,6 +229,86 @@ function updateFunctionComponent(
   workInProgress.flags |= PerformedWork;
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   return workInProgress.child;
+}
+
+// 对照官方 updateForwardRef：是 updateFunctionComponent 的一个分支——render 函数额外多收
+// fiber.ref 作为第二个参数（通过 renderWithHooks 的 secondArg 透传），其余渲染/bailout 逻辑
+// 完全一致；ref 本身的挂载/更新由 markRef 统一处理（beginWork 分发处调用）。
+function updateForwardRef(
+  current: FiberNode | null,
+  workInProgress: FiberNode,
+  Component: any,
+  nextProps: any,
+  renderLanes: Lanes,
+): FiberNode | null {
+  const render = Component.render;
+  const ref = workInProgress.ref;
+
+  prepareToReadContext(workInProgress, renderLanes);
+  const nextChildren = renderWithHooks(
+    current,
+    workInProgress,
+    render,
+    nextProps,
+    ref,
+    renderLanes,
+  );
+
+  if (current !== null && !didReceiveUpdate) {
+    return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
+  }
+
+  workInProgress.flags |= PerformedWork;
+  reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+  return workInProgress.child;
+}
+
+// 对照官方 updateMemoComponent（简化版，不含 SimpleMemoComponent 快路径升级）：
+// mount 时直接建一个内部 fiber（类型是 Component.type，克隆走 createFiberFromTypeAndProps）；
+// update 时若无待处理更新/context，用 compare（默认 shallowEqual）比较新旧 props，props 相等
+// 且 ref 相同则 bailout，否则克隆内部 fiber 继续渲染。
+function updateMemoComponent(
+  current: FiberNode | null,
+  workInProgress: FiberNode,
+  Component: any,
+  nextProps: any,
+  renderLanes: Lanes,
+): FiberNode | null {
+  if (current === null) {
+    const type = Component.type;
+    const child = createFiberFromTypeAndProps(
+      type,
+      null,
+      nextProps,
+      workInProgress.mode,
+      renderLanes,
+    );
+    child.ref = workInProgress.ref;
+    child.return = workInProgress;
+    workInProgress.child = child;
+    return child;
+  }
+
+  const currentChild = current.child as FiberNode;
+  const hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(
+    current,
+    renderLanes,
+  );
+  if (!hasScheduledUpdateOrContext) {
+    const prevProps = currentChild.memoizedProps;
+    const compare =
+      Component.compare !== null ? Component.compare : shallowEqual;
+    if (compare(prevProps, nextProps) && current.ref === workInProgress.ref) {
+      return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
+    }
+  }
+
+  workInProgress.flags |= PerformedWork;
+  const newChild = createWorkInProgress(currentChild, nextProps);
+  newChild.ref = workInProgress.ref;
+  newChild.return = workInProgress;
+  workInProgress.child = newChild;
+  return newChild;
 }
 
 function updateHostRoot(
@@ -241,8 +346,8 @@ function updateHostComponent(
   const nextProps = workInProgress.pendingProps;
   // 官方这里还有 shouldSetTextContent 的直接文本子节点优化（textarea/option/input 等
   // 直接把 children 当 textContent、不再生成 HostText fiber），等 react-dom 落地时补。
-  // ref 的 markRef 标记也留到 Phase 9 forwardRef 落地时补。
   const nextChildren = nextProps.children;
+  markRef(current, workInProgress);
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   return workInProgress.child;
 }
@@ -460,6 +565,26 @@ function beginWork(
       return updateHostComponent(current, workInProgress, renderLanes);
     case HostText:
       return updateHostText(current, workInProgress);
+    case ForwardRef: {
+      const Component = workInProgress.type;
+      return updateForwardRef(
+        current,
+        workInProgress,
+        Component,
+        workInProgress.pendingProps,
+        renderLanes,
+      );
+    }
+    case MemoComponent: {
+      const Component = workInProgress.type;
+      return updateMemoComponent(
+        current,
+        workInProgress,
+        Component,
+        workInProgress.pendingProps,
+        renderLanes,
+      );
+    }
     case Fragment:
       return updateFragment(current, workInProgress, renderLanes);
     case Mode:

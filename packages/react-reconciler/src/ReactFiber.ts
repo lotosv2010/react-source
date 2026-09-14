@@ -14,14 +14,21 @@ import { ConcurrentMode, NoMode, type TypeOfMode } from "./ReactTypeOfMode";
 import {
   ContextConsumer,
   ContextProvider,
+  ForwardRef,
   Fragment,
   HostComponent,
   HostRoot,
   HostText,
   IndeterminateComponent,
+  MemoComponent,
   type WorkTag,
 } from "./ReactWorkTags";
-import { REACT_PROVIDER_TYPE, REACT_CONTEXT_TYPE } from "shared/ReactSymbols";
+import {
+  REACT_PROVIDER_TYPE,
+  REACT_CONTEXT_TYPE,
+  REACT_FORWARD_REF_TYPE,
+  REACT_MEMO_TYPE,
+} from "shared/ReactSymbols";
 
 // 对照官方 packages/react-reconciler/src/ReactFiber.new.js：FiberNode 官方不用 class（用
 // function 构造器 + new），这里为了 TS 里字段声明更直观改用 class，字段集合和初始值保持一致。
@@ -227,13 +234,20 @@ export function createFiberFromTypeAndProps(
     return createFiberFromFragment(pendingProps.children, mode, lanes, key);
   } else if (typeof type === "object" && type !== null) {
     // <Context.Provider>/<Context.Consumer> 元素的 type 是 createContext 生成的
-    // Provider/Context 对象本身（不是函数），靠 $$typeof 区分（对照官方 getTag 分支）
+    // Provider/Context 对象本身（不是函数），forwardRef()/memo() 返回的也是对象而非函数，
+    // 都靠 $$typeof 区分（对照官方 getTag 分支）
     switch (type.$$typeof) {
       case REACT_PROVIDER_TYPE:
         fiberTag = ContextProvider;
         break;
       case REACT_CONTEXT_TYPE:
         fiberTag = ContextConsumer;
+        break;
+      case REACT_FORWARD_REF_TYPE:
+        fiberTag = ForwardRef;
+        break;
+      case REACT_MEMO_TYPE:
+        fiberTag = MemoComponent;
         break;
       default:
         throw new Error(

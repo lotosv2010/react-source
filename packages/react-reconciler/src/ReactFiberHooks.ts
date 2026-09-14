@@ -856,11 +856,13 @@ const HooksDispatcherOnUpdate = {
 
 // 对照官方 renderWithHooks：渲染前重置 hook 相关模块状态、按 mount/update 切换 dispatcher，
 // 渲染后把 dispatcher 恢复成 ContextOnlyDispatcher（渲染阶段外调用 hook 会立即报错）。
+// secondArg 对应官方同名参数：只有 ForwardRef 会传（render(props, ref)），其余组件类型不传。
 export function renderWithHooks<Props>(
   current: FiberNode | null,
   workInProgress: FiberNode,
-  Component: (props: Props) => any,
+  Component: (props: Props, secondArg?: any) => any,
   props: Props,
+  secondArg: any,
   nextRenderLanes: Lanes,
 ): any {
   renderLanes = nextRenderLanes;
@@ -875,7 +877,7 @@ export function renderWithHooks<Props>(
       ? HooksDispatcherOnMount
       : HooksDispatcherOnUpdate;
 
-  const children = Component(props);
+  const children = Component(props, secondArg);
 
   ReactCurrentDispatcher.current = ContextOnlyDispatcher;
 

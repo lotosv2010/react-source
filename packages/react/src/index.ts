@@ -5,6 +5,8 @@
 
 import { createElement, isValidElement } from "./ReactElement";
 import { createContext } from "./ReactContext";
+import { forwardRef } from "./ReactForwardRef";
+import { memo } from "./ReactMemo";
 import { Component, PureComponent } from "./ReactBaseClasses";
 import {
   useCallback,
@@ -30,7 +32,9 @@ export {
   PureComponent,
   createContext,
   createElement,
+  forwardRef,
   isValidElement,
+  memo,
   useCallback,
   useContext,
   useDeferredValue,
@@ -56,7 +60,9 @@ export default {
   PureComponent,
   createContext,
   createElement,
+  forwardRef,
   isValidElement,
+  memo,
   useState,
   useReducer,
   useRef,

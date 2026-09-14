@@ -24,6 +24,7 @@ import {
   ClassComponent,
   ContextConsumer,
   ContextProvider,
+  ForwardRef,
   Fragment,
   FunctionComponent,
   HostComponent,
@@ -31,6 +32,7 @@ import {
   HostRoot,
   HostText,
   IndeterminateComponent,
+  MemoComponent,
   Mode,
 } from "./ReactWorkTags";
 
@@ -166,6 +168,8 @@ function completeWork(
     case Fragment:
     case Mode:
     case ContextConsumer:
+    case ForwardRef:
+    case MemoComponent:
       bubbleProperties(workInProgress);
       return null;
     case ContextProvider: {
