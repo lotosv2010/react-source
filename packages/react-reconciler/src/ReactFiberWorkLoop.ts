@@ -22,6 +22,7 @@ import {
   NoLanes,
   NoTimestamp,
   SyncLane,
+  claimNextTransitionLane,
   getHighestPriorityLane,
   getNextLanes,
   includesBlockingLane,
@@ -34,6 +35,7 @@ import {
   type Lane,
   type Lanes,
 } from "./ReactFiberLane";
+import ReactSharedInternals from "shared/ReactSharedInternals";
 import type { FiberRootNode } from "./ReactFiberRoot";
 import { finishQueueingConcurrentUpdates } from "./ReactFiberConcurrentUpdates";
 import {
@@ -68,6 +70,7 @@ const scheduleCallback = unstable_scheduleCallback;
 const cancelCallback = unstable_cancelCallback;
 const now = unstable_now;
 const shouldYield = unstable_shouldYield;
+const ReactCurrentBatchConfig = ReactSharedInternals.ReactCurrentBatchConfig;
 
 // ExecutionContext 位掩码：标记当前处于批量/渲染/提交阶段。官方还有 EventContext（事件系统，
 // Phase 6）与 RetryAfterError（错误边界重试，Phase 9），这里先补 BatchedContext 供 flushSync
@@ -92,6 +95,9 @@ let workInProgressRootSkippedLanes: Lanes = NoLanes;
 
 // 最近一次 update 的事件时间（requestEventTime 在批处理内复用同一时间戳）
 let currentEventTime: number = NoTimestamp;
+// 同一事件（同一次 startTransition 回调）内的多次更新复用同一条 TransitionLane，
+// 避免每次 setState 都 claimNextTransitionLane 分走不同的 lane
+let currentEventTransitionLane: Lane = NoLane;
 
 let executionContext: number = NoContext;
 
@@ -120,14 +126,26 @@ export function requestEventTime(): number {
   return currentEventTime;
 }
 
-// 对照官方 requestUpdateLane：非并发根（legacy render）恒返回 SyncLane；并发根优先取
-// flushSync 设置的 DiscreteEventPriority，否则取事件系统的 currentUpdatePriority。事件系统
-// Phase 6 才落地，这里普通 createRoot().render() 的兜底优先级是 DefaultLane。
+// 对照官方 requestUpdateLane：非并发根（legacy render）恒返回 SyncLane；startTransition
+// 回调内（ReactCurrentBatchConfig.transition 非空）走 TransitionLane，同一事件内的多次更新
+// 复用同一条 lane（currentEventTransitionLane），直到下次真正进入新的事件才重新分配；
+// 否则并发根优先取 flushSync 设置的 DiscreteEventPriority，否则取事件系统的
+// currentUpdatePriority。事件系统 Phase 6 才落地，这里普通 createRoot().render() 的兜底
+// 优先级是 DefaultLane。
 export function requestUpdateLane(fiber: FiberNode): Lane {
   const mode = fiber.mode;
   if ((mode & ConcurrentMode) === NoMode) {
     return SyncLane;
   }
+
+  const isTransition = ReactCurrentBatchConfig.transition !== null;
+  if (isTransition) {
+    if (currentEventTransitionLane === NoLane) {
+      currentEventTransitionLane = claimNextTransitionLane();
+    }
+    return currentEventTransitionLane;
+  }
+
   const updateLane = getCurrentUpdatePriority();
   if (updateLane !== NoLane) {
     return updateLane;
@@ -378,8 +396,10 @@ function performConcurrentWorkOnRoot(
   root: FiberRootNode,
   didTimeout: boolean,
 ): any {
-  // 进入新的并发工作循环，重置事件时间
+  // 进入新的并发工作循环，重置事件时间与本轮 TransitionLane（对照官方
+  // processRootScheduleInMicrotask 结尾的重置，让下一次 startTransition 重新分配 lane）
   currentEventTime = NoTimestamp;
+  currentEventTransitionLane = NoLane;
 
   if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
     throw new Error("Should not already be working.");

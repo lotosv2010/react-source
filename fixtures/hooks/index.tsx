@@ -1,10 +1,12 @@
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -17,6 +19,24 @@ let externalSetCount:
 function Counter(): any {
   const [count, setCount] = useState(() => 0);
   externalSetCount = setCount;
+
+  // useTransition：isPending 应该先变 true（紧急优先级更新），再随 callback 内的 setCount
+  // 一起变回 false（TransitionLane 更新，与 setCount 同批次提交）
+  const [isPending, startTransition] = useTransition();
+  externalStartTransition = startTransition;
+  console.log("useTransition isPending：", isPending);
+
+  // useDeferredValue：count 是紧急更新时，deferredCount 先保留旧值，随后单独一次 TransitionLane
+  // 渲染追上新值——两次渲染间应该能看到 deferredCount 落后 count 一拍
+  const deferredCount = useDeferredValue(count);
+  if (deferredCount !== count) {
+    console.log(
+      "useDeferredValue 落后：count=",
+      count,
+      "deferredCount=",
+      deferredCount,
+    );
+  }
 
   // renderCount 用 useRef 记录渲染次数：ref 不触发重渲染、跨渲染保持同一对象，
   // 与 count 的变化对比即可验证 mountRef/updateRef 是否真的跨渲染复用了同一个 { current }
@@ -68,6 +88,7 @@ function Counter(): any {
 
 let memoComputeCount = 0;
 let externalLogCount: (() => void) | null = null;
+let externalStartTransition: ((callback: () => void) => void) | null = null;
 const effectOrder: string[] = [];
 
 function runHooksDemo(): void {
@@ -94,6 +115,15 @@ function runHooksDemo(): void {
     prevLogCount = externalLogCount;
     if (clicks >= 3) {
       clearInterval(interval);
+
+      // 用 startTransition 再触发一次更新：验证 isPending 先变 true（同步紧急更新），
+      // callback 内的 setCount 落在 TransitionLane、与 setPending(false) 同批次提交
+      setTimeout(() => {
+        externalStartTransition?.(() => {
+          externalSetCount?.((prevCount) => prevCount + 1);
+        });
+        console.log("startTransition 调用后：", rootElement.innerHTML);
+      }, 500);
     }
   }, 1000);
 }

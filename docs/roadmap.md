@@ -160,8 +160,12 @@
 - [x] **useLayoutEffect**：mountLayoutEffect/updateLayoutEffect（标记 Update fiber flag，复用同一套 pushEffect/deps 比较），`commitRootImpl` 在 `commitMutationEffects` 之后、`root.current` 切换之后同步跑 `commitLayoutEffects`
   - 旧 layout effect 的销毁提前到 mutation 阶段（`commitMutationEffectsOnFiber` 的 FunctionComponent 分支），保证一棵树里所有兄弟组件的销毁都先跑完才轮到挂载
   - 组件整体卸载时（`commitDeletionEffectsOnFiber` 的 FunctionComponent 分支）统一清理 layout + passive effect 的 destroy
-- **useTransition**：startTransition 把更新标记为 TransitionLane，返回 isPending
-- **useDeferredValue**：延迟渲染次要更新，配合 TransitionLane / Suspense 使用
+- [x] **useTransition**：mountTransition/updateTransition + startTransition（`ReactFiberHooks.ts`）。start 函数内部：先把 `currentUpdatePriority` 提升到 `ContinuousEventPriority` 并 `setPending(true)`（走一次紧急更新让"进入 pending"立刻反映到 UI），再把 `ReactCurrentBatchConfig.transition` 置为非 null，`setPending(false)` 与 callback() 内部的更新在这个标记内一起派发；`requestUpdateLane` 检测到 `transition` 非空就走 `claimNextTransitionLane`（同一事件内的多次更新复用 `currentEventTransitionLane`，直到 `performConcurrentWorkOnRoot` 重置）
+  - 新增 `packages/react/src/ReactCurrentBatchConfig.ts`（`{ transition }` 字段），聚合进 `ReactSharedInternals`
+  - 简化范围：不支持异步 action（callback 返回 Promise 时官方会 entangle async action scope、延后 isPending 变回 false），本项目 startTransition 只接受同步回调；`Transition` 对象简化为空对象占位，不含官方的 `_updatedFibers`/`types` 等 DEV 调试字段
+- [x] **useDeferredValue**：mountDeferredValue/updateDeferredValue（`ReactFiberHooks.ts`），值变化且当前渲染含紧急 lane（`!includesOnlyNonUrgentLanes(renderLanes)`）时保留旧值、派生一条 deferred lane 稍后单独渲染；否则直接用新值
+  - `requestDeferredLane` 简化为直接复用 `claimNextTransitionLane`（官方有独立的 `DeferredLane` 位，本项目 lane 位表未单独开一位，效果上仍能让 deferred 渲染独立成一条 lane）
+  - 简化范围：不支持 `initialValue` 第二参数（配合 Suspense 预渲染场景，本项目暂无 Suspense）
 - **useSyncExternalStore**：commit 后同步校验外部 store 快照是否一致（tearing 检测），不一致则强制同步重渲染，是外部状态库适配并发特性的标准方案
 - **useId**：基于组件树挂载路径生成跨 SSR/CSR 一致的唯一 id，依赖 Phase 4 未涉及的 treeContext（forkStack/idStack），Phase 9 做 hydrate 时一并补齐
 

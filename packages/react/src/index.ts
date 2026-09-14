@@ -6,12 +6,14 @@
 import { createElement, isValidElement } from "./ReactElement";
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
   useState,
+  useTransition,
 } from "./ReactHooks";
 import ReactSharedInternals from "./ReactSharedInternals";
 
@@ -23,12 +25,14 @@ export {
   createElement,
   isValidElement,
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
   useState,
+  useTransition,
 };
 
 // 对照官方 v18 的 __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED：reconciler 与 react
@@ -48,4 +52,6 @@ export default {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useTransition,
+  useDeferredValue,
 };

@@ -4,8 +4,8 @@
  * Hook 以链表形式挂在 fiber.memoizedState 上，renderWithHooks 在函数组件渲染前根据
  * mount/update 切换 ReactCurrentDispatcher.current，组件体内调用的 useState/useReducer
  * 通过这个 dispatcher 找到对应的 mountXxx/updateXxx 实现。
- * 当前落地 useState/useReducer/useRef/useMemo/useCallback/useEffect/useLayoutEffect；
- * eagerState dispatch 侧优化见 Phase 9.4，均按官方结构逐步补齐。
+ * 当前落地 useState/useReducer/useRef/useMemo/useCallback/useEffect/useLayoutEffect/
+ * useTransition/useDeferredValue；eagerState dispatch 侧优化见 Phase 9.4，均按官方结构逐步补齐。
  */
 
 import ReactSharedInternals from "shared/ReactSharedInternals";
@@ -21,6 +21,8 @@ import {
   isSubsetOfLanes,
   mergeLanes,
   NoLane,
+  claimNextTransitionLane,
+  includesOnlyNonUrgentLanes,
   type Lane,
   type Lanes,
 } from "./ReactFiberLane";
@@ -38,8 +40,15 @@ import {
   requestUpdateLane,
   scheduleUpdateOnFiber,
 } from "./ReactFiberWorkLoop";
+import {
+  ContinuousEventPriority,
+  getCurrentUpdatePriority,
+  higherEventPriority,
+  setCurrentUpdatePriority,
+} from "./ReactEventPriorities";
 
 const ReactCurrentDispatcher = ReactSharedInternals.ReactCurrentDispatcher;
+const ReactCurrentBatchConfig = ReactSharedInternals.ReactCurrentBatchConfig;
 
 type BasicStateAction<S> = ((prevState: S) => S) | S;
 type Dispatch<A> = (action: A) => void;
@@ -513,6 +522,98 @@ function updateLayoutEffect(
   updateEffectImpl(UpdateEffect, HookLayout, create, deps);
 }
 
+// 对照官方 requestDeferredLane：本项目 lane 位表没有单独的 DeferredLane 位（简化范围，
+// 官方 DeferredLane 独立于 TransitionLanes，用于区分"用户触发的 transition"与"useDeferredValue
+// 派生的渲染"），这里简化为直接复用 claimNextTransitionLane 轮转分配，效果上仍能让
+// deferred 渲染独立成一条 lane、不阻塞紧急更新，只是不与官方一样单独占一个 bit。
+function requestDeferredLane(): Lane {
+  return claimNextTransitionLane();
+}
+
+// 对照官方 mountDeferredValueImpl：mount 时没有"上一次的值"可比较，直接以当前值渲染。
+// 简化范围：不支持第二个 initialValue 参数（配合 Suspense 预渲染场景使用，本项目暂无 Suspense）。
+function mountDeferredValue<T>(value: T): T {
+  const hook = mountWorkInProgressHook();
+  hook.memoizedState = value;
+  return value;
+}
+
+function updateDeferredValue<T>(value: T): T {
+  const hook = updateWorkInProgressHook();
+  const prevValue: T = hook.memoizedState;
+  return updateDeferredValueImpl(hook, prevValue, value);
+}
+
+// 对照官方 updateDeferredValueImpl：值不变直接复用（Object.is 快速跳过）；值变化时，
+// 若当前渲染不是"只包含非紧急 lane"（renderLanes 里有 Sync/Continuous/Default 等紧急更新），
+// 说明这是一次紧急渲染，先保留旧值渲染、同时派生一条 deferred lane 稍后单独渲染新值；
+// 否则（渲染本身已经是非紧急优先级，比如就是那条 deferred lane 触发的重渲染）直接用新值。
+function updateDeferredValueImpl<T>(hook: Hook, prevValue: T, value: T): T {
+  if (is(value, prevValue)) {
+    return value;
+  }
+
+  const shouldDeferValue = !includesOnlyNonUrgentLanes(renderLanes);
+  if (shouldDeferValue) {
+    const deferredLane = requestDeferredLane();
+    currentlyRenderingFiber.lanes = mergeLanes(
+      currentlyRenderingFiber.lanes,
+      deferredLane,
+    );
+    markSkippedUpdateLanes(deferredLane);
+    return prevValue;
+  }
+
+  markWorkInProgressReceivedUpdate();
+  hook.memoizedState = value;
+  return value;
+}
+
+// 对照官方 startTransition：callback() 内触发的更新要落到 TransitionLane，靠
+// ReactCurrentBatchConfig.transition 非空这个标记传递给 requestUpdateLane。isPending 的
+// true/false 两次 setState 分别在标记内外派发——setPending(true) 在提升到
+// ContinuousEventPriority 之后但转场标记之前，走一条紧急优先级更新让"进入 pending"立刻反映到
+// UI；setPending(false) 与 callback() 内部真正的状态更新一起落在 transition 标记内，
+// 因此会被 requestUpdateLane 分配同一条 TransitionLane、同批次渲染。
+// 简化范围：不支持异步 action（callback 返回 Promise 时官方会 entangle 一个async action
+// scope、深化 isPending 直到 Promise resolve），本项目 startTransition 只接受同步回调。
+function startTransition(
+  setPending: Dispatch<BasicStateAction<boolean>>,
+  callback: () => void,
+): void {
+  const previousPriority = getCurrentUpdatePriority();
+  setCurrentUpdatePriority(
+    higherEventPriority(previousPriority, ContinuousEventPriority),
+  );
+  setPending(true);
+
+  const prevTransition = ReactCurrentBatchConfig.transition;
+  ReactCurrentBatchConfig.transition = {};
+  try {
+    setPending(false);
+    callback();
+  } finally {
+    setCurrentUpdatePriority(previousPriority);
+    ReactCurrentBatchConfig.transition = prevTransition;
+  }
+}
+
+function mountTransition(): [boolean, (callback: () => void) => void] {
+  const [, setPending] = mountState(false);
+  // start 函数只在 mount 时创建一次，deps 恒为空——官方同样只 bind 一次（fiber 引用不变）
+  const start = startTransition.bind(null, setPending);
+  const hook = mountWorkInProgressHook();
+  hook.memoizedState = start;
+  return [false, start];
+}
+
+function updateTransition(): [boolean, (callback: () => void) => void] {
+  const [isPending] = updateState(false);
+  const hook = updateWorkInProgressHook();
+  const start = hook.memoizedState;
+  return [isPending, start];
+}
+
 // dispatchSetState/dispatchReducerAction 逻辑相同（本项目暂不做 eagerState 优化，见 Phase 9.4），
 // 保留两个名字只是对照官方两套 hook 各自的 dispatch 入口命名。
 function enqueueHookUpdate<S, A>(
@@ -566,6 +667,8 @@ const ContextOnlyDispatcher = {
   useCallback: throwInvalidHookError,
   useEffect: throwInvalidHookError,
   useLayoutEffect: throwInvalidHookError,
+  useTransition: throwInvalidHookError,
+  useDeferredValue: throwInvalidHookError,
 };
 
 const HooksDispatcherOnMount = {
@@ -576,6 +679,8 @@ const HooksDispatcherOnMount = {
   useCallback: mountCallback,
   useEffect: mountEffect,
   useLayoutEffect: mountLayoutEffect,
+  useTransition: mountTransition,
+  useDeferredValue: mountDeferredValue,
 };
 
 const HooksDispatcherOnUpdate = {
@@ -586,6 +691,8 @@ const HooksDispatcherOnUpdate = {
   useCallback: updateCallback,
   useEffect: updateEffect,
   useLayoutEffect: updateLayoutEffect,
+  useTransition: updateTransition,
+  useDeferredValue: updateDeferredValue,
 };
 
 // 对照官方 renderWithHooks：渲染前重置 hook 相关模块状态、按 mount/update 切换 dispatcher，

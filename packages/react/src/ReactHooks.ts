@@ -111,3 +111,21 @@ export function useLayoutEffect(
   const dispatcher = resolveDispatcher();
   return dispatcher.useLayoutEffect(create, deps);
 }
+
+/**
+ * useTransition() - 把 callback 内触发的更新标记为过渡更新（TransitionLane），不阻塞紧急更新
+ * @returns [isPending 是否有过渡更新正在进行, startTransition 触发过渡更新的函数]
+ */
+export function useTransition(): [boolean, (callback: () => void) => void] {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useTransition();
+}
+
+/**
+ * useDeferredValue() - 返回一个延迟更新的值，紧急更新时先复用旧值，随后再单独渲染新值
+ * @param value - 最新值
+ */
+export function useDeferredValue<T>(value: T): T {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useDeferredValue(value);
+}
