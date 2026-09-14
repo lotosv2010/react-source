@@ -14,8 +14,8 @@ import {
 import { Callback } from "./ReactFiberFlags";
 import type { FiberNode } from "./ReactFiber";
 import type { FiberRootNode } from "./ReactFiberRoot";
-import { HostRoot } from "./ReactWorkTags";
 import { markSkippedUpdateLanes } from "./ReactFiberWorkLoop";
+import { enqueueConcurrentClassUpdate } from "./ReactFiberConcurrentUpdates";
 
 // 对照官方 packages/react-reconciler/src/ReactFiberClassUpdateQueue.new.js：Update 对象是
 // 不可变的纯数据（payload 携带新 state/新 element），shared.pending 是循环链表（last 指向
@@ -117,7 +117,8 @@ export function createUpdate<State>(
 }
 
 /**
- * 把 update 追加到 fiber 的 pending 循环链表上，并把 lane 冒泡到根
+ * 把 update 加入 fiber 的并发更新暂存队列（Phase 5 起改为延迟入队模型，见
+ * ReactFiberConcurrentUpdates 的 finishQueueingConcurrentUpdates）
  * @param fiber - 目标 fiber
  * @param update - 待加入的 update
  * @param lane - update 的优先级
@@ -135,54 +136,7 @@ export function enqueueUpdate<State>(
   }
 
   const sharedQueue: SharedQueue<State> = updateQueue.shared;
-
-  const pending = sharedQueue.pending;
-  if (pending === null) {
-    // 第一条 update，自成环
-    update.next = update;
-  } else {
-    update.next = pending.next;
-    pending.next = update;
-  }
-  sharedQueue.pending = update;
-
-  return markUpdateLaneFromFiberToRoot(fiber, lane);
-}
-
-// 对照官方 markUpdateLaneFromFiberToRoot：把 lane 标记到发起更新的 fiber 及其 alternate，
-// 再沿 return 路径把 lane 合并到每个祖先的 childLanes（beginWork 的 bailout 判断靠 childLanes
-// 决定是否继续向下）。走到根时返回 FiberRootNode（通过 HostRoot fiber 的 stateNode 取到），
-// 供 scheduleUpdateOnFiber 使用。
-function markUpdateLaneFromFiberToRoot(
-  sourceFiber: FiberNode,
-  lane: Lane,
-): FiberRootNode | null {
-  // 更新源 fiber 自己的 lanes
-  sourceFiber.lanes = mergeLanes(sourceFiber.lanes, lane);
-  let alternate = sourceFiber.alternate;
-  if (alternate !== null) {
-    alternate.lanes = mergeLanes(alternate.lanes, lane);
-  }
-
-  // 沿父路径向上，更新每个祖先的 childLanes
-  let parent = sourceFiber.return;
-  let node: FiberNode = sourceFiber;
-  while (parent !== null) {
-    parent.childLanes = mergeLanes(parent.childLanes, lane);
-    alternate = parent.alternate;
-    if (alternate !== null) {
-      alternate.childLanes = mergeLanes(alternate.childLanes, lane);
-    }
-
-    node = parent;
-    parent = parent.return;
-  }
-
-  if (node.tag === HostRoot) {
-    // node 现在是 HostRoot fiber，stateNode 指向 FiberRootNode
-    return node.stateNode;
-  }
-  return null;
+  return enqueueConcurrentClassUpdate(fiber, sharedQueue, update, lane);
 }
 
 // 单 lane 模型下 update 不会因优先级不足被跳过（只有 SyncLane 一条 lane），

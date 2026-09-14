@@ -9,6 +9,7 @@
     "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/"
   },
   "dependencies": {
+    "react": "workspace:*",
     "scheduler": "workspace:*",
     "shared": "workspace:*"
   },

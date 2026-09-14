@@ -15,6 +15,7 @@ import {
 import type { FiberNode } from "./ReactFiber";
 import { DidCapture, NoFlags, PerformedWork } from "./ReactFiberFlags";
 import { NoLanes, includesSomeLane, type Lanes } from "./ReactFiberLane";
+import { renderWithHooks } from "./ReactFiberHooks";
 import {
   Fragment,
   FunctionComponent,
@@ -63,19 +64,6 @@ export function reconcileChildren(
   }
 }
 
-// 对照官方 renderWithHooks：Phase 5 接入 hooks 时会替换为真正的实现（切换 Dispatcher、
-// 建立 Hook 链表、设置 ReactCurrentOwner）。当前直接调用函数组件拿 children。
-function renderWithHooks(
-  _current: FiberNode | null,
-  _workInProgress: FiberNode,
-  Component: any,
-  props: any,
-  _context: any,
-  _renderLanes: Lanes,
-): any {
-  return Component(props);
-}
-
 // 官方用 shouldConstruct（看 type.prototype 是否 extends React.Component）区分 class/function，
 // class 组件留到 Phase 8。这里 mountIndeterminateComponent 一律按函数组件定型。
 function mountIndeterminateComponent(
@@ -91,7 +79,6 @@ function mountIndeterminateComponent(
     workInProgress,
     Component,
     props,
-    null,
     renderLanes,
   );
 
@@ -117,7 +104,6 @@ function updateFunctionComponent(
     workInProgress,
     Component,
     nextProps,
-    null,
     renderLanes,
   );
 
@@ -320,6 +306,13 @@ function beginWork(
     `Unknown unit of work tag (${workInProgress.tag}). This error is likely caused by a bug in ` +
       "React. Please file an issue.",
   );
+}
+
+// 对照官方 markWorkInProgressReceivedUpdate：updateReducer 发现 hook state 真的变化时调用，
+// 补上 didReceiveUpdate = true 这条路径——函数组件 props 没变但内部 setState 出了新值，
+// 同样需要继续 reconcile children，而不是走 bailout。
+export function markWorkInProgressReceivedUpdate(): void {
+  didReceiveUpdate = true;
 }
 
 export { beginWork };

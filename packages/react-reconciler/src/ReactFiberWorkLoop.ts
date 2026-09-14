@@ -30,6 +30,7 @@ import {
   type Lanes,
 } from "./ReactFiberLane";
 import type { FiberRootNode } from "./ReactFiberRoot";
+import { finishQueueingConcurrentUpdates } from "./ReactFiberConcurrentUpdates";
 import {
   ContinuousEventPriority,
   DefaultEventPriority,
@@ -144,6 +145,10 @@ function prepareFreshStack(root: FiberRootNode, lanes: Lanes): FiberNode {
   workInProgressRootRenderLanes = lanes;
   workInProgressRootExitStatus = RootInProgress;
   workInProgressRootSkippedLanes = NoLanes;
+
+  // 对照官方：新开一棵栈前，先把上一批（render 阶段之外触发的）并发 update 刷回各自
+  // fiber 的 updateQueue，保证接下来遍历到的 updateQueue 一定是最新的
+  finishQueueingConcurrentUpdates();
 
   return rootWorkInProgress;
 }
