@@ -154,10 +154,12 @@
 - [x] **useReducer**：mountReducer / updateReducer（useState 是其特例实现，共用同一套更新队列逻辑）
 - [x] **useRef**：mountRef 创建 { current: initialValue }，updateRef 原样返回、不比较 deps
 - [x] **useMemo / useCallback**：mountMemo/updateMemo、mountCallback/updateCallback，areHookInputsEqual 对比 deps，变化则重算/返回新引用，否则复用缓存
-- **useEffect**：mountEffect / updateEffect（deps 对比、标记 Passive flag）
-  - commit 阶段异步执行 flushPassiveEffects：先执行 destroy 清理，再执行 create，缓存 destroy
-  - 补 commitRoot 的 before-mutation / layout 子阶段（Passive effect 的调度入口）
-- **useLayoutEffect**：mountLayoutEffect / updateLayoutEffect（deps 对比、标记 Layout flag，在 commit layout 子阶段同步执行 destroy/create）
+- [x] **useEffect**：mountEffect/updateEffect（`ReactFiberHooks.ts` 里的 `mountEffectImpl`/`updateEffectImpl`，deps 复用 areHookInputsEqual，标记 Passive fiber flag），effect 节点用 pushEffect 串成循环链表挂在 `fiber.updateQueue`（与 ClassComponent updateQueue 结构不同，只是复用字段名）
+  - commit 阶段异步执行：`commitRootImpl` 检测到 Passive flag 后 `scheduleCallback(NormalPriority, flushPassiveEffects)`，先 `commitPassiveUnmountEffects` 再 `commitPassiveMountEffects`
+  - 简化范围：`PassiveMask` 简化为只含 `Passive` 位（官方还含 Visibility/ChildDeletion），未做 StrictMode 双调用
+- [x] **useLayoutEffect**：mountLayoutEffect/updateLayoutEffect（标记 Update fiber flag，复用同一套 pushEffect/deps 比较），`commitRootImpl` 在 `commitMutationEffects` 之后、`root.current` 切换之后同步跑 `commitLayoutEffects`
+  - 旧 layout effect 的销毁提前到 mutation 阶段（`commitMutationEffectsOnFiber` 的 FunctionComponent 分支），保证一棵树里所有兄弟组件的销毁都先跑完才轮到挂载
+  - 组件整体卸载时（`commitDeletionEffectsOnFiber` 的 FunctionComponent 分支）统一清理 layout + passive effect 的 destroy
 - **useTransition**：startTransition 把更新标记为 TransitionLane，返回 isPending
 - **useDeferredValue**：延迟渲染次要更新，配合 TransitionLane / Suspense 使用
 - **useSyncExternalStore**：commit 后同步校验外部 store 快照是否一致（tearing 检测），不一致则强制同步重渲染，是外部状态库适配并发特性的标准方案

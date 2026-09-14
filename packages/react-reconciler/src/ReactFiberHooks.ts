@@ -4,14 +4,18 @@
  * Hook 以链表形式挂在 fiber.memoizedState 上，renderWithHooks 在函数组件渲染前根据
  * mount/update 切换 ReactCurrentDispatcher.current，组件体内调用的 useState/useReducer
  * 通过这个 dispatcher 找到对应的 mountXxx/updateXxx 实现。
- * 当前落地 useState/useReducer/useRef/useMemo/useCallback；useEffect/useLayoutEffect 等
- * 见 roadmap Phase 5.3，eagerState dispatch 侧优化见 Phase 9.4，均按官方结构逐步补齐。
+ * 当前落地 useState/useReducer/useRef/useMemo/useCallback/useEffect/useLayoutEffect；
+ * eagerState dispatch 侧优化见 Phase 9.4，均按官方结构逐步补齐。
  */
 
 import ReactSharedInternals from "shared/ReactSharedInternals";
 import is from "shared/objectIs";
 
 import type { FiberNode } from "./ReactFiber";
+import {
+  Passive as PassiveEffect,
+  Update as UpdateEffect,
+} from "./ReactFiberFlags";
 import {
   NoLanes,
   isSubsetOfLanes,
@@ -22,6 +26,12 @@ import {
 } from "./ReactFiberLane";
 import { markWorkInProgressReceivedUpdate } from "./ReactFiberBeginWork";
 import { enqueueConcurrentHookUpdate } from "./ReactFiberConcurrentUpdates";
+import {
+  HasEffect as HookHasEffect,
+  Layout as HookLayout,
+  Passive as HookPassive,
+  type HookFlags,
+} from "./ReactHookEffectTags";
 import {
   markSkippedUpdateLanes,
   requestEventTime,
@@ -375,6 +385,134 @@ function updateCallback<T>(callback: T, deps: unknown[] | void | null): T {
   return callback;
 }
 
+// 对照官方 Effect：单个副作用节点，create/destroy 是用户传入的函数，tag 标记 effect 类型
+// （Layout/Passive）与本次渲染是否需要执行（HasEffect，由 deps 是否变化决定）。多个 effect
+// 按调用顺序串成一个循环链表（不是 Hook 链表，而是挂在 fiber.updateQueue 上的独立链表——
+// 这样 commit 阶段可以只遍历 effect，不用重新走一遍 Hook 链表）。
+export interface Effect {
+  tag: HookFlags;
+  create: () => (() => void) | void;
+  destroy: (() => void) | void;
+  deps: unknown[] | null;
+  next: Effect;
+}
+
+export interface FunctionComponentUpdateQueue {
+  lastEffect: Effect | null;
+}
+
+// 对照官方 pushEffect：把新 effect 接到 circular list 尾部（lastEffect.next 始终指向头部）。
+function pushEffect(
+  tag: HookFlags,
+  create: () => (() => void) | void,
+  destroy: (() => void) | void,
+  deps: unknown[] | null,
+): Effect {
+  const effect: Effect = {
+    tag,
+    create,
+    destroy,
+    deps,
+    next: null as any,
+  };
+  let componentUpdateQueue: FunctionComponentUpdateQueue | null =
+    currentlyRenderingFiber.updateQueue;
+  if (componentUpdateQueue === null) {
+    componentUpdateQueue = { lastEffect: null };
+    currentlyRenderingFiber.updateQueue = componentUpdateQueue;
+    componentUpdateQueue.lastEffect = effect.next = effect;
+  } else {
+    const lastEffect = componentUpdateQueue.lastEffect;
+    if (lastEffect === null) {
+      componentUpdateQueue.lastEffect = effect.next = effect;
+    } else {
+      const firstEffect = lastEffect.next;
+      lastEffect.next = effect;
+      effect.next = firstEffect;
+      componentUpdateQueue.lastEffect = effect;
+    }
+  }
+  return effect;
+}
+
+// 对照官方 mountEffectImpl：mount 时无论 deps 是什么，一定要执行一次 create，所以恒打
+// HookHasEffect；fiberFlags（Update/Passive）标记到 fiber 上，供 commit 阶段的
+// LayoutMask/PassiveMask 剪枝判断这棵子树要不要走 layout/passive 遍历。
+function mountEffectImpl(
+  fiberFlags: number,
+  hookFlags: HookFlags,
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  const hook = mountWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  currentlyRenderingFiber.flags |= fiberFlags;
+  hook.memoizedState = pushEffect(
+    hookFlags | HookHasEffect,
+    create,
+    undefined,
+    nextDeps,
+  );
+}
+
+// 对照官方 updateEffectImpl：deps 不变时复用上一次的 destroy、不打 HookHasEffect（commit
+// 阶段据此跳过这个 effect，达到"deps 不变就不重新执行"的效果）；deps 变化才重新打标记。
+function updateEffectImpl(
+  fiberFlags: number,
+  hookFlags: HookFlags,
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  const hook = updateWorkInProgressHook();
+  const nextDeps = deps === undefined ? null : deps;
+  const prevEffect: Effect = hook.memoizedState;
+  const destroy = prevEffect.destroy;
+
+  if (nextDeps !== null) {
+    const prevDeps = prevEffect.deps;
+    if (areHookInputsEqual(nextDeps, prevDeps)) {
+      hook.memoizedState = pushEffect(hookFlags, create, destroy, nextDeps);
+      return;
+    }
+  }
+
+  currentlyRenderingFiber.flags |= fiberFlags;
+  hook.memoizedState = pushEffect(
+    hookFlags | HookHasEffect,
+    create,
+    destroy,
+    nextDeps,
+  );
+}
+
+function mountEffect(
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  mountEffectImpl(PassiveEffect, HookPassive, create, deps);
+}
+
+function updateEffect(
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  updateEffectImpl(PassiveEffect, HookPassive, create, deps);
+}
+
+function mountLayoutEffect(
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  mountEffectImpl(UpdateEffect, HookLayout, create, deps);
+}
+
+function updateLayoutEffect(
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  updateEffectImpl(UpdateEffect, HookLayout, create, deps);
+}
+
 // dispatchSetState/dispatchReducerAction 逻辑相同（本项目暂不做 eagerState 优化，见 Phase 9.4），
 // 保留两个名字只是对照官方两套 hook 各自的 dispatch 入口命名。
 function enqueueHookUpdate<S, A>(
@@ -426,6 +564,8 @@ const ContextOnlyDispatcher = {
   useRef: throwInvalidHookError,
   useMemo: throwInvalidHookError,
   useCallback: throwInvalidHookError,
+  useEffect: throwInvalidHookError,
+  useLayoutEffect: throwInvalidHookError,
 };
 
 const HooksDispatcherOnMount = {
@@ -434,6 +574,8 @@ const HooksDispatcherOnMount = {
   useRef: mountRef,
   useMemo: mountMemo,
   useCallback: mountCallback,
+  useEffect: mountEffect,
+  useLayoutEffect: mountLayoutEffect,
 };
 
 const HooksDispatcherOnUpdate = {
@@ -442,6 +584,8 @@ const HooksDispatcherOnUpdate = {
   useRef: updateRef,
   useMemo: updateMemo,
   useCallback: updateCallback,
+  useEffect: updateEffect,
+  useLayoutEffect: updateLayoutEffect,
 };
 
 // 对照官方 renderWithHooks：渲染前重置 hook 相关模块状态、按 mount/update 切换 dispatcher，

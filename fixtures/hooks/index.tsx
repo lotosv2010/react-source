@@ -1,4 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 
 // Phase 5 验证：useState 管理计数器状态，setState → 重渲染 → DOM 更新。
@@ -34,6 +41,24 @@ function Counter(): any {
     `渲染第 ${renderCount.current} 次：count=${count} double=${double} memoComputeCount=${memoComputeCount}`,
   );
 
+  // useLayoutEffect 应该在 commit 后同步执行，比 useEffect 更早——用一个模块级顺序数组
+  // 记录两者实际触发顺序，验证 commitLayoutEffects（同步）先于 flushPassiveEffects（异步）
+  useLayoutEffect(() => {
+    effectOrder.push(`layout(count=${count})`);
+    console.log("useLayoutEffect 执行，count=", count, "顺序：", effectOrder);
+    return () => {
+      console.log("useLayoutEffect 清理，count=", count);
+    };
+  }, [count]);
+
+  useEffect(() => {
+    effectOrder.push(`passive(count=${count})`);
+    console.log("useEffect 执行，count=", count, "顺序：", effectOrder);
+    return () => {
+      console.log("useEffect 清理，count=", count);
+    };
+  }, [count]);
+
   return (
     <div className="counter">
       <p>count: {count}</p>
@@ -43,6 +68,7 @@ function Counter(): any {
 
 let memoComputeCount = 0;
 let externalLogCount: (() => void) | null = null;
+const effectOrder: string[] = [];
 
 function runHooksDemo(): void {
   const rootElement = document.getElementById("root");

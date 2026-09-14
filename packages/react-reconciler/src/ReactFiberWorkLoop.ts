@@ -7,10 +7,15 @@
 
 import { beginWork } from "./ReactFiberBeginWork";
 import { completeWork } from "./ReactFiberCompleteWork";
-import { commitMutationEffects } from "./ReactFiberCommitWork";
+import {
+  commitLayoutEffects,
+  commitMutationEffects,
+  commitPassiveMountEffects,
+  commitPassiveUnmountEffects,
+} from "./ReactFiberCommitWork";
 import type { FiberNode } from "./ReactFiber";
 import { createWorkInProgress } from "./ReactFiber";
-import { Incomplete, NoFlags } from "./ReactFiberFlags";
+import { Incomplete, NoFlags, Passive } from "./ReactFiberFlags";
 import {
   DefaultLane,
   NoLane,
@@ -93,6 +98,10 @@ let executionContext: number = NoContext;
 // 同步任务队列：SyncLane 的 performSyncWorkOnRoot 先进这个队列，由微任务统一 flush
 let syncQueue: Array<() => any> | null = null;
 let isFlushingSyncQueue = false;
+
+// 本次 commit 是否产生了待执行的 passive effect（useEffect）；有则记住 root，
+// 交给 Scheduler 在 commit 完全结束后异步 flush（对照官方 rootWithPendingPassiveEffects）。
+let rootWithPendingPassiveEffects: FiberRootNode | null = null;
 
 export function getExecutionContext(): number {
   return executionContext;
@@ -311,16 +320,51 @@ function commitRootImpl(root: FiberRootNode): void {
   const prevExecutionContext = executionContext;
   executionContext |= CommitContext;
 
-  // mutation 子阶段：插入/更新/删除 DOM（before-mutation / layout 子阶段留到后续）
+  // mutation 子阶段：插入/更新/删除 DOM（before-mutation 子阶段留到后续，本项目暂无
+  // getSnapshotBeforeUpdate/Snapshot flag 场景）
   commitMutationEffects(root, finishedWork, lanes);
 
-  // 双缓存树交换：workInProgress 树提交后成为新的 current 树
+  // 双缓存树交换：workInProgress 树提交后成为新的 current 树。layout effect 必须在这之后
+  // 挂载——useLayoutEffect 里读 DOM/ref 时，fiber.stateNode 应该已经是最新的
   root.current = finishedWork;
+
+  // layout 子阶段：同步挂载 useLayoutEffect（销毁已经在 commitMutationEffects 里做过了）
+  commitLayoutEffects(finishedWork, root);
 
   executionContext = prevExecutionContext;
 
+  // 有 useEffect 待执行，记住 root 并交给 Scheduler 异步 flush，不阻塞本次 commit 后的绘制
+  if (
+    (finishedWork.flags & Passive) !== NoFlags ||
+    (finishedWork.subtreeFlags & Passive) !== NoFlags
+  ) {
+    if (rootWithPendingPassiveEffects !== root) {
+      rootWithPendingPassiveEffects = root;
+      scheduleCallback(NormalPriority, flushPassiveEffects);
+    }
+  }
+
   // 有剩余工作（被跳过的 lane）则重新调度
   ensureRootIsScheduled(root, now());
+}
+
+// 对照官方 flushPassiveEffectsImpl（精简版）：commit 结束后异步执行，先卸载再挂载，
+// 保证同一批里"旧的先清理、新的再挂载"这一顺序。异步执行的意义是不阻塞 commit 后的绘制——
+// useLayoutEffect 之所以要同步，正是因为它必须在绘制前跑完；useEffect 没有这个要求。
+function flushPassiveEffects(): void {
+  const root = rootWithPendingPassiveEffects;
+  if (root === null) {
+    return;
+  }
+  rootWithPendingPassiveEffects = null;
+
+  const prevExecutionContext = executionContext;
+  executionContext |= CommitContext;
+
+  commitPassiveUnmountEffects(root.current);
+  commitPassiveMountEffects(root, root.current);
+
+  executionContext = prevExecutionContext;
 }
 
 function commitRoot(root: FiberRootNode): void {

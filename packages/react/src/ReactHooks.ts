@@ -85,3 +85,29 @@ export function useCallback<T>(callback: T, deps: unknown[] | void | null): T {
   const dispatcher = resolveDispatcher();
   return dispatcher.useCallback(callback, deps);
 }
+
+/**
+ * useEffect() - 在 commit 后异步执行副作用（不阻塞浏览器绘制）
+ * @param create - 副作用函数，可返回一个清理函数
+ * @param deps - 依赖数组，为 null/undefined 时每次渲染都重新执行
+ */
+export function useEffect(
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useEffect(create, deps);
+}
+
+/**
+ * useLayoutEffect() - 在 commit 阶段同步执行副作用（DOM 变更后、浏览器绘制前）
+ * @param create - 副作用函数，可返回一个清理函数
+ * @param deps - 依赖数组，为 null/undefined 时每次渲染都重新执行
+ */
+export function useLayoutEffect(
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useLayoutEffect(create, deps);
+}

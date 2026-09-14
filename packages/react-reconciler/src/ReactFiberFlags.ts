@@ -42,5 +42,12 @@ export const RefStatic = /*                    */ 0b00001000000000000000000000;
 export const MutationMask =
   Placement | Update | ChildDeletion | ContentReset | Ref;
 
+// 对照官方 LayoutMask/PassiveMask：commit 的 layout/passive 子阶段据此跳过不含对应
+// effect 的子树。官方还包含 Callback/Ref/Visibility/ChildDeletion，本项目目前没有
+// class 组件 Callback、Suspense Visibility 等场景，简化为只含 useLayoutEffect/useEffect
+// 实际会用到的 Update/Passive 位。
+export const LayoutMask = Update;
+export const PassiveMask = Passive;
+
 // 在 clone（createWorkInProgress）时不会被重置的 flag 集合
 export const StaticMask = RefStatic;

@@ -4,7 +4,13 @@
  */
 
 import type { FiberNode } from "./ReactFiber";
-import { MutationMask, Placement, Update } from "./ReactFiberFlags";
+import {
+  LayoutMask,
+  MutationMask,
+  PassiveMask,
+  Placement,
+  Update,
+} from "./ReactFiberFlags";
 import {
   appendChild,
   appendChildToContainer,
@@ -18,12 +24,74 @@ import {
 } from "./ReactFiberConfig";
 import type { Lanes } from "./ReactFiberLane";
 import type { FiberRootNode } from "./ReactFiberRoot";
-import { HostComponent, HostPortal, HostRoot, HostText } from "./ReactWorkTags";
+import type { Effect, FunctionComponentUpdateQueue } from "./ReactFiberHooks";
+import {
+  HasEffect as HookHasEffect,
+  Layout as HookLayout,
+  Passive as HookPassive,
+  type HookFlags,
+} from "./ReactHookEffectTags";
+import {
+  FunctionComponent,
+  HostComponent,
+  HostPortal,
+  HostRoot,
+  HostText,
+} from "./ReactWorkTags";
 
 // 删除操作需要在向上回溯过程中临时记住"最近的 host 父节点"，官方用模块级变量在
-// commitDeletionEffectsOnFiber 递归间传递。Phase 5 hooks 落地时这里还会加上卸载 effect 的清理。
+// commitDeletionEffectsOnFiber 递归间传递。
 let hostParent: any = null;
 let hostParentIsContainer = false;
+
+// 对照官方 commitHookEffectListMount：遍历 fiber.updateQueue（Hook effect 的循环链表），
+// 只执行 tag 与 flags 按位匹配的 effect（HookHasEffect 标记 deps 是否变化，
+// HookLayout/HookPassive 区分 effect 类型）。create 的返回值存回 effect.destroy，
+// 供下次卸载/重新执行时调用。
+function commitHookEffectListMount(
+  flags: HookFlags,
+  finishedWork: FiberNode,
+): void {
+  const updateQueue: FunctionComponentUpdateQueue | null =
+    finishedWork.updateQueue;
+  const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
+  if (lastEffect !== null) {
+    const firstEffect = lastEffect.next;
+    let effect: Effect = firstEffect;
+    do {
+      if ((effect.tag & flags) === flags) {
+        const create = effect.create;
+        effect.destroy = create();
+      }
+      effect = effect.next;
+    } while (effect !== firstEffect);
+  }
+}
+
+// 对照官方 commitHookEffectListUnmount：同样按位匹配遍历，调用缓存的 destroy 并清空，
+// 避免重复调用（对应 deps 不变、effect 未重新执行的场景不会被这里影响）。
+function commitHookEffectListUnmount(
+  flags: HookFlags,
+  finishedWork: FiberNode,
+): void {
+  const updateQueue: FunctionComponentUpdateQueue | null =
+    finishedWork.updateQueue;
+  const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
+  if (lastEffect !== null) {
+    const firstEffect = lastEffect.next;
+    let effect: Effect = firstEffect;
+    do {
+      if ((effect.tag & flags) === flags) {
+        const destroy = effect.destroy;
+        if (destroy !== undefined) {
+          effect.destroy = undefined;
+          destroy();
+        }
+      }
+      effect = effect.next;
+    } while (effect !== firstEffect);
+  }
+}
 
 function isHostParent(fiber: FiberNode): boolean {
   return (
@@ -244,8 +312,20 @@ function commitDeletionEffectsOnFiber(
       );
       return;
     }
+    case FunctionComponent: {
+      // 整棵组件被卸载：不管 deps 上次是否变化（HookHasEffect 未打也要清理），
+      // 所有 layout/passive effect 的 destroy 都必须执行一次，否则会漏清理订阅等资源
+      commitHookEffectListUnmount(HookLayout, deletedFiber);
+      commitHookEffectListUnmount(HookPassive, deletedFiber);
+      recursivelyTraverseDeletionEffects(
+        finishedRoot,
+        nearestMountedAncestor,
+        deletedFiber,
+      );
+      return;
+    }
     default: {
-      // 函数组件等没有自己 DOM 的节点：保持 hostParent 不变，继续向下找可移除的 host 节点
+      // Fragment/Mode 等没有自己 DOM 的节点：保持 hostParent 不变，继续向下找可移除的 host 节点
       recursivelyTraverseDeletionEffects(
         finishedRoot,
         nearestMountedAncestor,
@@ -376,8 +456,20 @@ function commitMutationEffectsOnFiber(
       commitReconciliationEffects(finishedWork);
       return;
     }
+    case FunctionComponent: {
+      recursivelyTraverseMutationEffects(root, finishedWork, lanes);
+      commitReconciliationEffects(finishedWork);
+
+      // 对照官方：layout effect 的销毁提前到 mutation 阶段（销毁旧值），挂载则统一放到
+      // commit 完全结束、root.current 已切换之后的 commitLayoutEffects——这样能保证一棵树里
+      // 所有兄弟组件的销毁都先跑完，才轮到任何一个组件挂载新的 layout effect，不会互相干扰。
+      if (flags & Update) {
+        commitHookEffectListUnmount(HookLayout | HookHasEffect, finishedWork);
+      }
+      return;
+    }
     default: {
-      // 函数组件/Fragment/Mode 等：无自身 DOM，只递归子树并处理 Placement
+      // Fragment/Mode 等：无自身 DOM，只递归子树并处理 Placement
       recursivelyTraverseMutationEffects(root, finishedWork, lanes);
       commitReconciliationEffects(finishedWork);
       return;
@@ -391,4 +483,129 @@ export function commitMutationEffects(
   committedLanes: Lanes,
 ): void {
   commitMutationEffectsOnFiber(finishedWork, root, committedLanes);
+}
+
+function recursivelyTraverseLayoutEffects(
+  root: FiberRootNode,
+  parentFiber: FiberNode,
+): void {
+  if (parentFiber.subtreeFlags & LayoutMask) {
+    let child = parentFiber.child;
+    while (child !== null) {
+      commitLayoutEffectsOnFiber(root, child);
+      child = child.sibling;
+    }
+  }
+}
+
+// 对照官方 commitLayoutEffectsOnFiber：mutation 阶段结束、root.current 已切换之后的
+// 第二次遍历，只挂载 layout effect（销毁已经在 mutation 阶段做过了）。
+function commitLayoutEffectsOnFiber(
+  root: FiberRootNode,
+  finishedWork: FiberNode,
+): void {
+  const flags = finishedWork.flags;
+
+  switch (finishedWork.tag) {
+    case FunctionComponent: {
+      recursivelyTraverseLayoutEffects(root, finishedWork);
+      if (flags & Update) {
+        commitHookEffectListMount(HookLayout | HookHasEffect, finishedWork);
+      }
+      return;
+    }
+    default: {
+      recursivelyTraverseLayoutEffects(root, finishedWork);
+      return;
+    }
+  }
+}
+
+export function commitLayoutEffects(
+  finishedWork: FiberNode,
+  root: FiberRootNode,
+): void {
+  commitLayoutEffectsOnFiber(root, finishedWork);
+}
+
+function recursivelyTraversePassiveMountEffects(
+  root: FiberRootNode,
+  parentFiber: FiberNode,
+): void {
+  if (parentFiber.subtreeFlags & PassiveMask) {
+    let child = parentFiber.child;
+    while (child !== null) {
+      commitPassiveMountOnFiber(root, child);
+      child = child.sibling;
+    }
+  }
+}
+
+// 对照官方 commitPassiveMountOnFiber：commit 完全结束后异步跑的一遍遍历，只挂载
+// passive effect（useEffect）。销毁走 commitPassiveUnmountEffects，二者分开跑是因为
+// 卸载可能发生在与本次渲染无关的更早 commit 里（比如上次渲染有、这次没有的组件）。
+function commitPassiveMountOnFiber(
+  root: FiberRootNode,
+  finishedWork: FiberNode,
+): void {
+  const flags = finishedWork.flags;
+
+  switch (finishedWork.tag) {
+    case FunctionComponent: {
+      recursivelyTraversePassiveMountEffects(root, finishedWork);
+      if (flags & Update) {
+        commitHookEffectListMount(HookPassive | HookHasEffect, finishedWork);
+      }
+      return;
+    }
+    default: {
+      recursivelyTraversePassiveMountEffects(root, finishedWork);
+      return;
+    }
+  }
+}
+
+export function commitPassiveMountEffects(
+  root: FiberRootNode,
+  finishedWork: FiberNode,
+): void {
+  commitPassiveMountOnFiber(root, finishedWork);
+}
+
+function recursivelyTraversePassiveUnmountEffects(
+  parentFiber: FiberNode,
+): void {
+  if (parentFiber.subtreeFlags & PassiveMask) {
+    let child = parentFiber.child;
+    while (child !== null) {
+      commitPassiveUnmountOnFiber(child);
+      child = child.sibling;
+    }
+  }
+}
+
+// 对照官方 commitPassiveUnmountOnFiber：在 commitPassiveMountEffects 之前跑，保证同一个
+// 组件"先销毁旧 effect，再挂载新 effect"的顺序（尽管这里销毁的是上一次渲染留下的 destroy，
+// 挂载的是本次渲染新 push 的 effect，二者通过 fiber.updateQueue 是同一份数据，销毁一定要
+// 先于挂载读到）。
+function commitPassiveUnmountOnFiber(finishedWork: FiberNode): void {
+  const flags = finishedWork.flags;
+
+  switch (finishedWork.tag) {
+    case FunctionComponent: {
+      recursivelyTraversePassiveUnmountEffects(finishedWork);
+      if (flags & Update) {
+        commitHookEffectListUnmount(HookPassive | HookHasEffect, finishedWork);
+      }
+      return;
+    }
+    default: {
+      recursivelyTraversePassiveUnmountEffects(finishedWork);
+      return;
+    }
+  }
+}
+
+export function commitPassiveUnmountEffects(finishedWork: FiberNode): void {
+  commitPassiveUnmountOnFiber(finishedWork);
 }

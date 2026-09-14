@@ -6,6 +6,8 @@
 import { createElement, isValidElement } from "./ReactElement";
 import {
   useCallback,
+  useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -21,6 +23,8 @@ export {
   createElement,
   isValidElement,
   useCallback,
+  useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -42,4 +46,6 @@ export default {
   useRef,
   useMemo,
   useCallback,
+  useEffect,
+  useLayoutEffect,
 };
