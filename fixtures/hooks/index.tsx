@@ -2,6 +2,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useInsertionEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -86,6 +87,23 @@ function Counter(): any {
   console.log(
     `渲染第 ${renderCount.current} 次：count=${count} double=${double} memoComputeCount=${memoComputeCount}`,
   );
+
+  // useInsertionEffect 应该比 useLayoutEffect 更早——它在 mutation 阶段、DOM 变更之后
+  // 立刻同步执行（commitMutationEffectsOnFiber 里），而 useLayoutEffect 要等到
+  // commitLayoutEffects（root.current 切换之后）才挂载。三者叠加验证完整顺序：
+  // insertion → layout → （绘制）→ passive
+  useInsertionEffect(() => {
+    effectOrder.push(`insertion(count=${count})`);
+    console.log(
+      "useInsertionEffect 执行，count=",
+      count,
+      "顺序：",
+      effectOrder,
+    );
+    return () => {
+      console.log("useInsertionEffect 清理，count=", count);
+    };
+  }, [count]);
 
   // useLayoutEffect 应该在 commit 后同步执行，比 useEffect 更早——用一个模块级顺序数组
   // 记录两者实际触发顺序，验证 commitLayoutEffects（同步）先于 flushPassiveEffects（异步）

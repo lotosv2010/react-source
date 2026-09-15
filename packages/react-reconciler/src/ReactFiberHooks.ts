@@ -37,6 +37,7 @@ import {
 } from "./ReactFiberConcurrentUpdates";
 import {
   HasEffect as HookHasEffect,
+  Insertion as HookInsertion,
   Layout as HookLayout,
   Passive as HookPassive,
   type HookFlags,
@@ -567,6 +568,23 @@ function updateLayoutEffect(
   updateEffectImpl(UpdateEffect, HookLayout, create, deps);
 }
 
+// 对照官方 mountInsertionEffect/updateInsertionEffect：与 useLayoutEffect 共用
+// mountEffectImpl/updateEffectImpl，只是 hookFlags 换成 HookInsertion——commit 阶段靠这个
+// tag 把它筛到 mutation 子阶段（DOM 变更前）执行，而不是 layout 子阶段。
+function mountInsertionEffect(
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  mountEffectImpl(UpdateEffect, HookInsertion, create, deps);
+}
+
+function updateInsertionEffect(
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  updateEffectImpl(UpdateEffect, HookInsertion, create, deps);
+}
+
 // 对照官方 requestDeferredLane：本项目 lane 位表没有单独的 DeferredLane 位（简化范围，
 // 官方 DeferredLane 独立于 TransitionLanes，用于区分"用户触发的 transition"与"useDeferredValue
 // 派生的渲染"），这里简化为直接复用 claimNextTransitionLane 轮转分配，效果上仍能让
@@ -887,6 +905,7 @@ const ContextOnlyDispatcher = {
   useCallback: throwInvalidHookError,
   useEffect: throwInvalidHookError,
   useLayoutEffect: throwInvalidHookError,
+  useInsertionEffect: throwInvalidHookError,
   useTransition: throwInvalidHookError,
   useDeferredValue: throwInvalidHookError,
   useSyncExternalStore: throwInvalidHookError,
@@ -902,6 +921,7 @@ const HooksDispatcherOnMount = {
   useCallback: mountCallback,
   useEffect: mountEffect,
   useLayoutEffect: mountLayoutEffect,
+  useInsertionEffect: mountInsertionEffect,
   useTransition: mountTransition,
   useDeferredValue: mountDeferredValue,
   useSyncExternalStore: mountSyncExternalStore,
@@ -919,6 +939,7 @@ const HooksDispatcherOnUpdate = {
   useCallback: updateCallback,
   useEffect: updateEffect,
   useLayoutEffect: updateLayoutEffect,
+  useInsertionEffect: updateInsertionEffect,
   useTransition: updateTransition,
   useDeferredValue: updateDeferredValue,
   useSyncExternalStore: updateSyncExternalStore,

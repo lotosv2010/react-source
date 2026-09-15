@@ -115,6 +115,19 @@ export function useLayoutEffect(
 }
 
 /**
+ * useInsertionEffect() - 在 DOM 变更之前同步执行副作用，专为 CSS-in-JS 库插入 <style> 设计
+ * @param create - 副作用函数，可返回一个清理函数
+ * @param deps - 依赖数组，为 null/undefined 时每次渲染都重新执行
+ */
+export function useInsertionEffect(
+  create: () => (() => void) | void,
+  deps: unknown[] | void | null,
+): void {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useInsertionEffect(create, deps);
+}
+
+/**
  * useTransition() - 把 callback 内触发的更新标记为过渡更新（TransitionLane），不阻塞紧急更新
  * @returns [isPending 是否有过渡更新正在进行, startTransition 触发过渡更新的函数]
  */

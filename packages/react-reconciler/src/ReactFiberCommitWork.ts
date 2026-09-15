@@ -36,6 +36,7 @@ import type { Effect, FunctionComponentUpdateQueue } from "./ReactFiberHooks";
 import type { Update as ClassUpdate } from "./ReactFiberClassUpdateQueue";
 import {
   HasEffect as HookHasEffect,
+  Insertion as HookInsertion,
   Layout as HookLayout,
   Passive as HookPassive,
   type HookFlags,
@@ -687,11 +688,20 @@ function commitMutationEffectsOnFiber(
       recursivelyTraverseMutationEffects(root, finishedWork, lanes);
       commitReconciliationEffects(finishedWork);
 
-      // 对照官方：layout effect 的销毁提前到 mutation 阶段（销毁旧值），挂载则统一放到
-      // commit 完全结束、root.current 已切换之后的 commitLayoutEffects——这样能保证一棵树里
-      // 所有兄弟组件的销毁都先跑完，才轮到任何一个组件挂载新的 layout effect，不会互相干扰。
-      // MemoComponent 本身没有 hook updateQueue，这里调用是安全的空操作。
       if (flags & Update) {
+        // 对照官方：useInsertionEffect 的销毁+挂载都在这里、DOM 变更之后立刻完成——它不像
+        // useLayoutEffect 那样把挂载推迟到 commitLayoutEffects，因为它的定位就是"比
+        // useLayoutEffect 更早"，必须在浏览器/其他组件读取布局信息之前就把 <style> 插进去。
+        commitHookEffectListUnmount(
+          HookInsertion | HookHasEffect,
+          finishedWork,
+        );
+        commitHookEffectListMount(HookInsertion | HookHasEffect, finishedWork);
+
+        // layout effect 的销毁提前到 mutation 阶段（销毁旧值），挂载则统一放到
+        // commit 完全结束、root.current 已切换之后的 commitLayoutEffects——这样能保证一棵树里
+        // 所有兄弟组件的销毁都先跑完，才轮到任何一个组件挂载新的 layout effect，不会互相干扰。
+        // MemoComponent 本身没有 hook updateQueue，这里调用是安全的空操作。
         commitHookEffectListUnmount(HookLayout | HookHasEffect, finishedWork);
       }
       return;

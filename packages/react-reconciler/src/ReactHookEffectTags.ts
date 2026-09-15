@@ -12,8 +12,8 @@ export const NoFlags: HookFlags = 0b0000;
 // 是否需要执行本次 effect（deps 变化时才打这个标记）
 export const HasEffect: HookFlags = 0b0001;
 
-// 三种 effect 各自的类型标记；Insertion 对应官方 useInsertionEffect，本项目暂不实现，
-// 留空位仅为了与官方数值对齐，方便对照。
+// 三种 effect 各自的类型标记；Insertion 对应官方 useInsertionEffect，在 mutation 阶段、
+// DOM 变更前触发（比 Layout 更早），专门服务 CSS-in-JS 库在测量布局前插入 <style> 规则。
 export const Insertion: HookFlags = 0b0010;
 export const Layout: HookFlags = 0b0100;
 export const Passive: HookFlags = 0b1000;
