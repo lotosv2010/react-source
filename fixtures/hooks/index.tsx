@@ -1,7 +1,9 @@
 import {
+  forwardRef,
   useCallback,
   useDeferredValue,
   useEffect,
+  useImperativeHandle,
   useInsertionEffect,
   useLayoutEffect,
   useMemo,
@@ -11,6 +13,46 @@ import {
   useTransition,
 } from "react";
 import { createRoot } from "react-dom/client";
+
+// useImperativeHandle 验证：forwardRef 转发下来的 ref 默认会绑定到内部真实 DOM 节点
+// （input），这里用 useImperativeHandle 自定义暴露给父组件的实例——只暴露 focus/clear
+// 两个方法，而不是整个 input 节点，验证父组件通过 ref.current 拿到的确实是自定义对象
+// 而非原生 DOM 元素。deps=[] 表示只在 mount 时创建一次暴露对象（与官方语义一致）。
+interface FancyHandle {
+  focus: () => void;
+  clear: () => void;
+}
+
+const FancyHandleInput = forwardRef<FancyHandle>((_props, ref) => {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => inputRef.current?.focus(),
+      clear: () => {
+        if (inputRef.current !== null) {
+          inputRef.current.value = "";
+        }
+      },
+    }),
+    [],
+  );
+
+  return <input ref={inputRef} placeholder="useImperativeHandle demo" />;
+});
+
+const externalFancyHandleRef: { current: FancyHandle | null } = {
+  current: null,
+};
+
+function FancyHandleDemo(): any {
+  return (
+    <div className="fancy-handle">
+      <FancyHandleInput ref={externalFancyHandleRef} />
+    </div>
+  );
+}
 
 // useSyncExternalStore 验证：一个 React 外部的极简 store（订阅者集合 + 一个数字值），
 // 不经过 setState，直接在模块级修改 value 并通知订阅者，验证 subscribeToStore 接上后
@@ -142,8 +184,28 @@ function runHooksDemo(): void {
   }
 
   const root = createRoot(rootElement);
-  root.render(<Counter />);
+  root.render(
+    <>
+      <Counter />
+      <FancyHandleDemo />
+    </>,
+  );
   console.log("mount 完成：", rootElement.innerHTML);
+
+  // useImperativeHandle 验证：ref.current 应该是 { focus, clear } 自定义对象，
+  // 不是原生 input DOM 节点——调用 focus() 能让输入框获得焦点，说明暴露的方法内部
+  // 正确闭包住了 inputRef
+  setTimeout(() => {
+    console.log(
+      "useImperativeHandle 暴露的实例（预期只有 focus/clear 两个方法）：",
+      externalFancyHandleRef.current,
+    );
+    externalFancyHandleRef.current?.focus();
+    console.log(
+      "调用 FancyHandle.focus() 后，激活元素：",
+      document.activeElement,
+    );
+  }, 200);
 
   let clicks = 0;
   let prevLogCount = externalLogCount;

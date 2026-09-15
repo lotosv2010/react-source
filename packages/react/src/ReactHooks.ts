@@ -128,6 +128,22 @@ export function useInsertionEffect(
 }
 
 /**
+ * useImperativeHandle() - 自定义 forwardRef 暴露给父组件的实例值（替代默认的整个 DOM/实例）
+ * @param ref - forwardRef 转发下来的 ref（对象或函数形式），为 null/undefined 时不做任何事
+ * @param create - 返回要暴露的对象，effect 时机与 useLayoutEffect 一致
+ * @param deps - 依赖数组，为 null/undefined 时每次渲染都重新执行
+ */
+export function useImperativeHandle<T>(
+  ref:
+    { current: T | null } | ((instance: T | null) => void) | null | undefined,
+  create: () => T,
+  deps: unknown[] | void | null,
+): void {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useImperativeHandle(ref, create, deps);
+}
+
+/**
  * useTransition() - 把 callback 内触发的更新标记为过渡更新（TransitionLane），不阻塞紧急更新
  * @returns [isPending 是否有过渡更新正在进行, startTransition 触发过渡更新的函数]
  */

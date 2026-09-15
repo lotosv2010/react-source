@@ -585,6 +585,66 @@ function updateInsertionEffect(
   updateEffectImpl(UpdateEffect, HookInsertion, create, deps);
 }
 
+// 对照官方 imperativeHandleEffect：真正执行 create() 拿到暴露对象，再挂到 ref 上；
+// 返回的清理函数负责在下次 effect 重新执行前（deps 变化）或组件卸载时把 ref 清空，
+// 与 useLayoutEffect 的 destroy 语义一致——只是这里的"副作用"是"设置 ref.current"而非任意逻辑。
+function imperativeHandleEffect<T>(
+  create: () => T,
+  ref:
+    { current: T | null } | ((instance: T | null) => void) | null | undefined,
+): (() => void) | void {
+  if (typeof ref === "function") {
+    const refCallback = ref;
+    const inst = create();
+    refCallback(inst);
+    return () => refCallback(null);
+  } else if (ref !== null && ref !== undefined) {
+    const refObject = ref;
+    const inst = create();
+    refObject.current = inst;
+    return () => {
+      refObject.current = null;
+    };
+  }
+}
+
+// 对照官方 mountImperativeHandle/updateImperativeHandle：与 useLayoutEffect 共用同一套
+// mountEffectImpl/updateEffectImpl（hookFlags 用 HookLayout，effect 挂载/销毁时机与
+// useLayoutEffect 完全一致——DOM 变更之后、浏览器绘制之前，保证父组件通过 ref 读到的
+// 是已完成布局的最新实例）。deps 额外 concat 上 ref 本身：ref 引用变化（比如从一个
+// callback ref 换成另一个）也要重新跑一次 create，否则旧 ref 上挂的是过期的暴露对象。
+function mountImperativeHandle<T>(
+  ref:
+    { current: T | null } | ((instance: T | null) => void) | null | undefined,
+  create: () => T,
+  deps: unknown[] | void | null,
+): void {
+  const effectDeps =
+    deps !== null && deps !== undefined ? deps.concat([ref]) : null;
+  mountEffectImpl(
+    UpdateEffect,
+    HookLayout,
+    () => imperativeHandleEffect(create, ref),
+    effectDeps,
+  );
+}
+
+function updateImperativeHandle<T>(
+  ref:
+    { current: T | null } | ((instance: T | null) => void) | null | undefined,
+  create: () => T,
+  deps: unknown[] | void | null,
+): void {
+  const effectDeps =
+    deps !== null && deps !== undefined ? deps.concat([ref]) : null;
+  updateEffectImpl(
+    UpdateEffect,
+    HookLayout,
+    () => imperativeHandleEffect(create, ref),
+    effectDeps,
+  );
+}
+
 // 对照官方 requestDeferredLane：本项目 lane 位表没有单独的 DeferredLane 位（简化范围，
 // 官方 DeferredLane 独立于 TransitionLanes，用于区分"用户触发的 transition"与"useDeferredValue
 // 派生的渲染"），这里简化为直接复用 claimNextTransitionLane 轮转分配，效果上仍能让
@@ -906,6 +966,7 @@ const ContextOnlyDispatcher = {
   useEffect: throwInvalidHookError,
   useLayoutEffect: throwInvalidHookError,
   useInsertionEffect: throwInvalidHookError,
+  useImperativeHandle: throwInvalidHookError,
   useTransition: throwInvalidHookError,
   useDeferredValue: throwInvalidHookError,
   useSyncExternalStore: throwInvalidHookError,
@@ -922,6 +983,7 @@ const HooksDispatcherOnMount = {
   useEffect: mountEffect,
   useLayoutEffect: mountLayoutEffect,
   useInsertionEffect: mountInsertionEffect,
+  useImperativeHandle: mountImperativeHandle,
   useTransition: mountTransition,
   useDeferredValue: mountDeferredValue,
   useSyncExternalStore: mountSyncExternalStore,
@@ -940,6 +1002,7 @@ const HooksDispatcherOnUpdate = {
   useEffect: updateEffect,
   useLayoutEffect: updateLayoutEffect,
   useInsertionEffect: updateInsertionEffect,
+  useImperativeHandle: updateImperativeHandle,
   useTransition: updateTransition,
   useDeferredValue: updateDeferredValue,
   useSyncExternalStore: updateSyncExternalStore,
