@@ -57,9 +57,11 @@ import {
   Fragment,
   FunctionComponent,
   HostComponent,
+  HostPortal,
   HostRoot,
   HostText,
   IndeterminateComponent,
+  LazyComponent,
   MemoComponent,
   Mode,
   OffscreenComponent,
@@ -340,6 +342,59 @@ function updateMemoComponent(
   newChild.return = workInProgress;
   workInProgress.child = newChild;
   return newChild;
+}
+
+// 对照官方 mountLazyComponent（简化：不含 resolveDefaultProps/热更新分支，只处理
+// FunctionComponent/ClassComponent 两种最常见的懒加载目标）：_init(_payload) 还没 resolve
+// 时直接 throw 出内部的 thenable（ReactLazy.ts 的 lazyInitializer），被 Suspense 的
+// throwException 捕获走挂起流程；resolve 后这里能拿到真正的 Component，按 shouldConstruct
+// 分流到 updateClassComponent/updateFunctionComponent，同时把 workInProgress.type 换成
+// 解析后的 Component（下次更新直接按普通组件处理，不用再走 LazyComponent 分支）。
+function mountLazyComponent(
+  _current: FiberNode | null,
+  workInProgress: FiberNode,
+  elementType: any,
+  renderLanes: Lanes,
+): FiberNode | null {
+  const props = workInProgress.pendingProps;
+  const payload = elementType._payload;
+  const init = elementType._init;
+  const Component = init(payload);
+  workInProgress.type = Component;
+
+  if (shouldConstruct(Component)) {
+    workInProgress.tag = ClassComponent;
+    return updateClassComponent(
+      null,
+      workInProgress,
+      Component,
+      props,
+      renderLanes,
+    );
+  }
+
+  workInProgress.tag = FunctionComponent;
+  return updateFunctionComponent(
+    null,
+    workInProgress,
+    Component,
+    props,
+    renderLanes,
+  );
+}
+
+// 对照官方 updatePortalComponent：Portal 没有 memoizedState 那一层间接（不像 HostRoot 要
+// 从 update payload 里取 element），pendingProps 本身就是 children，reconcile 逻辑与
+// updateHostComponent 平行——只是子树的真实 DOM 挂到 workInProgress.stateNode.containerInfo，
+// 不是当前 Fiber 树的宿主父节点（在 completeWork/commitWork 里体现）。
+function updatePortalComponent(
+  current: FiberNode | null,
+  workInProgress: FiberNode,
+  renderLanes: Lanes,
+): FiberNode | null {
+  const nextChildren = workInProgress.pendingProps;
+  reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+  return workInProgress.child;
 }
 
 function updateHostRoot(
@@ -852,6 +907,8 @@ function beginWork(
     }
     case HostRoot:
       return updateHostRoot(current, workInProgress, renderLanes);
+    case HostPortal:
+      return updatePortalComponent(current, workInProgress, renderLanes);
     case HostComponent:
       return updateHostComponent(current, workInProgress, renderLanes);
     case HostText:
@@ -888,6 +945,15 @@ function beginWork(
       return updateSuspenseComponent(current, workInProgress, renderLanes);
     case OffscreenComponent:
       return updateOffscreenComponent(current, workInProgress, renderLanes);
+    case LazyComponent: {
+      const elementType = workInProgress.elementType;
+      return mountLazyComponent(
+        current,
+        workInProgress,
+        elementType,
+        renderLanes,
+      );
+    }
   }
 
   throw new Error(

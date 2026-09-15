@@ -24,13 +24,15 @@ export type OpaqueRoot = FiberRoot;
  * 创建容器（FiberRoot），对应 ReactDOM.createRoot 底层调用的入口
  * @param containerInfo - 渲染器提供的容器（如 DOM 元素）
  * @param tag - 根节点的渲染模式（LegacyRoot/ConcurrentRoot）
+ * @param identifierPrefix - useId 生成的 id 前缀（createRoot 的 options.identifierPrefix）
  * @returns OpaqueRoot
  */
 export function createContainer(
   containerInfo: Container,
   tag: RootTag,
+  identifierPrefix?: string,
 ): OpaqueRoot {
-  return createFiberRoot(containerInfo, tag, null);
+  return createFiberRoot(containerInfo, tag, null, identifierPrefix);
 }
 
 /**

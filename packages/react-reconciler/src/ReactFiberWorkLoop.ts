@@ -128,6 +128,12 @@ export function getExecutionContext(): number {
   return executionContext;
 }
 
+// 对照官方 getWorkInProgressRoot：useId 的 mountId 需要拿到当前渲染所属的 root，
+// 才能读到 root.identifierPrefix。
+export function getWorkInProgressRoot(): FiberRootNode | null {
+  return workInProgressRoot;
+}
+
 // 对照官方 requestEventTime：渲染/提交阶段内直接取真实时间；同一批事件内的多次 update
 // 复用同一个 eventTime（currentEventTime），直到再次进入 React 才重新计算。
 export function requestEventTime(): number {

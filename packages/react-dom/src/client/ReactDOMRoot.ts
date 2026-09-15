@@ -35,17 +35,25 @@ export class ReactDOMRoot implements RootType {
   }
 }
 
+export interface RootOptions {
+  identifierPrefix?: string;
+}
+
 /**
  * 创建并发根（createRoot 的底层实现）
  * @param container - 宿主容器（DOM 元素）
- * @param _options - createRoot 选项（onRecoverableError 等），简版暂未消费
+ * @param options - createRoot 选项（identifierPrefix 供 useId 使用，onRecoverableError 等未消费）
  * @returns ReactDOMRoot
  */
-export function createRoot(container: Container, _options?: unknown): RootType {
+export function createRoot(
+  container: Container,
+  options?: RootOptions,
+): RootType {
   // 对照官方：先让 HostConfig 记下根容器（getRootHostContainer 返回它），
   // 再 createContainer 构造 HostRoot fiber。官方用 ConcurrentRoot 作为 createRoot 的根模式。
   setRootHostContainer(container);
-  const root = createContainer(container, ConcurrentRoot);
+  const identifierPrefix = options?.identifierPrefix ?? "";
+  const root = createContainer(container, ConcurrentRoot, identifierPrefix);
   // 事件委托：在根容器上一次性注册所有支持的原生事件监听器（capture+bubble），
   // 具体某个 DOM 节点是否真的挂了 onClick 等，交给事件分发时按需读取 props
   listenToAllSupportedEvents(container);

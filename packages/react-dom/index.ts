@@ -6,3 +6,4 @@
  */
 
 export { createRoot } from "./src/client/ReactDOMClient";
+export { createPortal } from "react-reconciler/src/ReactPortal";

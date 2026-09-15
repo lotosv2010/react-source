@@ -153,3 +153,13 @@ export function useContext<T>(context: ReactContext<T>): T {
   const dispatcher = resolveDispatcher();
   return dispatcher.useContext(context);
 }
+
+/**
+ * useId() - 生成一个跨组件实例稳定、页面内唯一的字符串 id
+ * 简化范围：本项目没有 hydrateRoot，只落地官方的客户端分支（模块级自增计数器），
+ * 不做 treeContext 按组件树路径编码 id 那一套（该机制只为 SSR/CSR 一致性服务）
+ */
+export function useId(): string {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useId();
+}

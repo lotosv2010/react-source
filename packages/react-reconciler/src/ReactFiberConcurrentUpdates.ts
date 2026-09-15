@@ -121,6 +121,18 @@ export function enqueueConcurrentHookUpdate(
   return getRootForUpdatedFiber(fiber);
 }
 
+// 对照官方 enqueueConcurrentHookUpdateAndEagerlyBailout：dispatchSetState 提前算出的新
+// state 与当前 state 相同时，这条 update 不需要触发重渲染，但仍要用 NoLane 入队（万一之后
+// 同一个 fiber 因为别的原因重渲染、且 reducer 已经变化，这条 update 还得被重放一次）——
+// 唯一区别是不冒泡 lane、不调度更新。
+export function enqueueConcurrentHookUpdateAndEagerlyBailout(
+  fiber: FiberNode,
+  queue: any,
+  update: any,
+): void {
+  enqueueUpdate(fiber, queue, update, NoLane);
+}
+
 /**
  * class 组件 / HostRoot 的 update 入队入口（取代 ReactFiberClassUpdateQueue 原先
  * 立即冒泡的 enqueueUpdate 实现）

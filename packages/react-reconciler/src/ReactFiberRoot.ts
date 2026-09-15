@@ -52,8 +52,15 @@ export class FiberRootNode {
   entanglements: Lanes[];
   // Suspense 挂起时 attachPingListener 用来去重同一个 wakeable 的监听（Phase 9.1）
   pingCache: WeakMap<Wakeable, Set<Lanes>> | null;
+  // useId 生成的 id 前缀（createRoot(container, { identifierPrefix }) 透传），多个 root
+  // 共存在同一页面时用来避免 id 冲突，本项目默认空字符串（对照官方默认值）
+  identifierPrefix: string;
 
-  constructor(containerInfo: Container, tag: RootTag) {
+  constructor(
+    containerInfo: Container,
+    tag: RootTag,
+    identifierPrefix: string,
+  ) {
     this.tag = tag;
     this.containerInfo = containerInfo;
     this.current = null as unknown as FiberNode;
@@ -72,6 +79,7 @@ export class FiberRootNode {
     this.entangledLanes = NoLanes;
     this.entanglements = createLaneMap(NoLanes);
     this.pingCache = null;
+    this.identifierPrefix = identifierPrefix;
   }
 }
 
@@ -85,14 +93,16 @@ function createLaneMap<T>(initialValue: T): T[] {
  * @param containerInfo - 渲染器提供的容器（如 DOM 元素）
  * @param tag - 根节点的渲染模式（LegacyRoot/ConcurrentRoot）
  * @param initialChildren - 初始渲染的 children（createContainer 传 null，hydrateRoot 才传实际内容）
+ * @param identifierPrefix - useId 生成的 id 前缀，默认空字符串
  * @returns FiberRootNode
  */
 export function createFiberRoot(
   containerInfo: Container,
   tag: RootTag,
   initialChildren: any,
+  identifierPrefix: string = "",
 ): FiberRootNode {
-  const root = new FiberRootNode(containerInfo, tag);
+  const root = new FiberRootNode(containerInfo, tag, identifierPrefix);
 
   // 循环构造：HostRoot fiber 的 stateNode 指向 root，root.current 指向该 fiber
   const uninitializedFiber = createHostRootFiber(tag);

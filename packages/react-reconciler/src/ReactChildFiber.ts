@@ -4,18 +4,23 @@
  * 决定复用/新建/删除，并标记 Placement/ChildDeletion 等副作用
  */
 
-import { REACT_ELEMENT_TYPE, REACT_FRAGMENT_TYPE } from "shared/ReactSymbols";
+import {
+  REACT_ELEMENT_TYPE,
+  REACT_FRAGMENT_TYPE,
+  REACT_PORTAL_TYPE,
+} from "shared/ReactSymbols";
 
 import {
   createFiberFromElement,
   createFiberFromFragment,
+  createFiberFromPortal,
   createFiberFromText,
   createWorkInProgress,
   type FiberNode,
 } from "./ReactFiber";
 import { ChildDeletion, Placement } from "./ReactFiberFlags";
 import type { Lanes } from "./ReactFiberLane";
-import { Fragment, HostText } from "./ReactWorkTags";
+import { Fragment, HostPortal, HostText } from "./ReactWorkTags";
 
 // 对照官方 packages/react-reconciler/src/ReactChildFiber.new.js：ChildReconciler 是一个
 // 工厂函数，shouldTrackSideEffects=false 时（mountChildFibers）只构建 fiber 不标记副作用，
@@ -27,6 +32,14 @@ function isReactElement(obj: any): boolean {
     typeof obj === "object" &&
     obj !== null &&
     obj.$$typeof === REACT_ELEMENT_TYPE
+  );
+}
+
+function isPortal(obj: any): boolean {
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    obj.$$typeof === REACT_PORTAL_TYPE
   );
 }
 
@@ -205,6 +218,30 @@ function ChildReconciler(shouldTrackSideEffects: boolean) {
     }
   }
 
+  // 对照官方 updatePortal：Portal 复用条件除了 tag 相同，还要求 containerInfo/implementation
+  // 都相同——挂载目标变了本质上是另一棵子树，直接新建。
+  function updatePortal(
+    returnFiber: FiberNode,
+    current: FiberNode | null,
+    portal: any,
+    lanes: Lanes,
+  ): FiberNode {
+    if (
+      current === null ||
+      current.tag !== HostPortal ||
+      current.stateNode.containerInfo !== portal.containerInfo ||
+      current.stateNode.implementation !== portal.implementation
+    ) {
+      const created = createFiberFromPortal(portal, returnFiber.mode, lanes);
+      created.return = returnFiber;
+      return created;
+    } else {
+      const existing = useFiber(current, portal.children || []);
+      existing.return = returnFiber;
+      return existing;
+    }
+  }
+
   function createChild(
     returnFiber: FiberNode,
     newChild: any,
@@ -232,6 +269,16 @@ function ChildReconciler(shouldTrackSideEffects: boolean) {
           lanes,
         );
         created.ref = newChild.ref;
+        created.return = returnFiber;
+        return created;
+      }
+
+      if (isPortal(newChild)) {
+        const created = createFiberFromPortal(
+          newChild,
+          returnFiber.mode,
+          lanes,
+        );
         created.return = returnFiber;
         return created;
       }
@@ -280,6 +327,13 @@ function ChildReconciler(shouldTrackSideEffects: boolean) {
           return null;
         }
       }
+      if (isPortal(newChild)) {
+        if (newChild.key === key) {
+          return updatePortal(returnFiber, oldFiber, newChild, lanes);
+        } else {
+          return null;
+        }
+      }
       if (isArrayLike(newChild)) {
         if (key !== null) {
           return null;
@@ -313,6 +367,12 @@ function ChildReconciler(shouldTrackSideEffects: boolean) {
           existingChildren.get(newChild.key === null ? newIdx : newChild.key) ||
           null;
         return updateElement(returnFiber, matchedFiber, newChild, lanes);
+      }
+      if (isPortal(newChild)) {
+        const matchedFiber =
+          existingChildren.get(newChild.key === null ? newIdx : newChild.key) ||
+          null;
+        return updatePortal(returnFiber, matchedFiber, newChild, lanes);
       }
       if (isArrayLike(newChild)) {
         const matchedFiber = existingChildren.get(newIdx) || null;
@@ -375,6 +435,42 @@ function ChildReconciler(shouldTrackSideEffects: boolean) {
       created.return = returnFiber;
       return created;
     }
+  }
+
+  // 对照官方 reconcileSinglePortal：单 Portal 场景的复用条件与 updatePortal 一致
+  // （tag/containerInfo/implementation 都要匹配），结构上和 reconcileSingleElement 平行。
+  function reconcileSinglePortal(
+    returnFiber: FiberNode,
+    currentFirstChild: FiberNode | null,
+    portal: any,
+    lanes: Lanes,
+  ): FiberNode {
+    const key = portal.key;
+    let child = currentFirstChild;
+    while (child !== null) {
+      if (child.key === key) {
+        if (
+          child.tag === HostPortal &&
+          child.stateNode.containerInfo === portal.containerInfo &&
+          child.stateNode.implementation === portal.implementation
+        ) {
+          deleteRemainingChildren(returnFiber, child.sibling);
+          const existing = useFiber(child, portal.children || []);
+          existing.return = returnFiber;
+          return existing;
+        } else {
+          deleteRemainingChildren(returnFiber, child);
+          break;
+        }
+      } else {
+        deleteChild(returnFiber, child);
+      }
+      child = child.sibling;
+    }
+
+    const created = createFiberFromPortal(portal, returnFiber.mode, lanes);
+    created.return = returnFiber;
+    return created;
   }
 
   function reconcileSingleTextNode(
@@ -532,6 +628,16 @@ function ChildReconciler(shouldTrackSideEffects: boolean) {
       if (isReactElement(newChild)) {
         return placeSingleChild(
           reconcileSingleElement(
+            returnFiber,
+            currentFirstChild,
+            newChild,
+            lanes,
+          ),
+        );
+      }
+      if (isPortal(newChild)) {
+        return placeSingleChild(
+          reconcileSinglePortal(
             returnFiber,
             currentFirstChild,
             newChild,

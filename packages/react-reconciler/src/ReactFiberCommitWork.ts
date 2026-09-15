@@ -357,6 +357,31 @@ function commitDeletionEffectsOnFiber(
       );
       return;
     }
+    case HostPortal: {
+      // 进入 Portal 后，"最近的宿主父节点"切换成 Portal 自己的容器——子树里的 host 节点
+      // 应该从这个容器里移除，不是外层 hostParent（对照官方：递归期间临时替换 hostParent/
+      // hostParentIsContainer，退出后恢复原值）。
+      if (supportsMutation) {
+        const prevHostParent = hostParent;
+        const prevHostParentIsContainer = hostParentIsContainer;
+        hostParent = deletedFiber.stateNode.containerInfo;
+        hostParentIsContainer = true;
+        recursivelyTraverseDeletionEffects(
+          finishedRoot,
+          nearestMountedAncestor,
+          deletedFiber,
+        );
+        hostParent = prevHostParent;
+        hostParentIsContainer = prevHostParentIsContainer;
+      } else {
+        recursivelyTraverseDeletionEffects(
+          finishedRoot,
+          nearestMountedAncestor,
+          deletedFiber,
+        );
+      }
+      return;
+    }
     case FunctionComponent:
     case ForwardRef:
     case MemoComponent: {
@@ -644,6 +669,14 @@ function commitMutationEffectsOnFiber(
       return;
     }
     case HostRoot: {
+      recursivelyTraverseMutationEffects(root, finishedWork, lanes);
+      commitReconciliationEffects(finishedWork);
+      return;
+    }
+    case HostPortal: {
+      // 官方在 mutation 模式下 Update flag 对应的分支只服务 supportsPersistence
+      // （replaceContainerChildren，本项目 supportsPersistence 恒为 false），Portal 自身
+      // 无生命周期，行为等同于 Fragment/Mode：只需递归子树并处理 Placement/Deletion。
       recursivelyTraverseMutationEffects(root, finishedWork, lanes);
       commitReconciliationEffects(finishedWork);
       return;

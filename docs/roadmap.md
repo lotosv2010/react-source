@@ -126,12 +126,6 @@
 
 **阶段目标验收**：`fixtures/scheduler` 演示——原生任务 5ms 分片、5000 项大列表并发渲染不阻塞 rAF 帧、`flushSync` 同步更新抢占 DefaultLane 并发渲染。
 
-## 待实现
-
-> **Phase 2 / Phase 3 / Phase 4 已完成**：`react-dom` 包（`createRoot(container).render(<App />)` 渲染到真实 DOM，简版）、reconciler 主链路 + 更新与 Diff 算法、以及 Scheduler + 完整 Lane 模型 + 可中断 workLoop 均已落地，详见上文「已完成」区。
->
-> **Phase 5（Hooks）/ Phase 6（事件系统）/ Phase 7（Context API）/ Phase 8（Class 组件生命周期）已完成**：核心 Hooks（useState/useReducer/useEffect/useLayoutEffect/useTransition/useDeferredValue/useSyncExternalStore 等）+ 合成事件系统（事件委托、SyntheticEvent、事件优先级分发）+ Context API（createContext/Provider/Consumer/useContext + 变化传播）+ Class 组件（生命周期、setState/forceUpdate、PureComponent）均已落地并验证，详见下文对应小节。仍显式搁置：**noop-renderer**（5.5，测试渲染器，暂不实现）、**useId**（推迟到 Phase 9 随 hydrate 一起补齐）。故当前待实现项从 **Phase 9（其他核心 API + 性能优化）** 开始。
-
 ---
 
 ### Phase 5: Hooks
@@ -170,8 +164,9 @@
   - 简化范围：不支持 `initialValue` 第二参数（配合 Suspense 预渲染场景，本项目暂无 Suspense）
 - [x] **useSyncExternalStore**：mountSyncExternalStore/updateSyncExternalStore（`ReactFiberHooks.ts`）。渲染时直接读一次 `getSnapshot()` 作为本次值（打破"只依赖参数/上次状态"的常规，只因 store 更新语义恒为同步）；`mountEffect` 挂一条订阅 effect（`subscribeToStore`，commit 后才真正调用外部 `subscribe`），另 `pushEffect` 一条不比较 deps 的 passive effect（`updateStoreInstance`），每次 commit 后同步 `inst` 缓存并补一次快照检查
   - `subscribeToStore`/`updateStoreInstance` 检测到快照变化（`checkIfSnapshotChanged`）都调用 `forceStoreRerender`：新增 `enqueueConcurrentRenderForLane`（`ReactFiberConcurrentUpdates.ts`，只冒泡 lane、不携带 update 对象）+ `scheduleUpdateOnFiber`，强制走 `SyncLane` 同步重渲染
-  - 简化范围：不支持 `getServerSnapshot`（SSR/hydrate 明确不做，见 Phase 10）；不做官方 render 阶段被并发事件打断时的 `pushStoreConsistencyCheck` 一致性检查（依赖 commit 前整树扫描 `StoreConsistency` flag + 事件系统，Phase 6 才落地），只保留 `subscribeToStore` + `updateStoreInstance` 这条被动检测路径——足够覆盖"外部 store 变化触发重渲染"这个可验证的主路径
-- **useId**：基于组件树挂载路径生成跨 SSR/CSR 一致的唯一 id，依赖 Phase 4 未涉及的 treeContext（forkStack/idStack），Phase 9 做 hydrate 时一并补齐
+  - 简化范围：不支持 `getServerSnapshot`（SSR/hydrate 明确不做，见文末「待实现 › 明确搁置」）；不做官方 render 阶段被并发事件打断时的 `pushStoreConsistencyCheck` 一致性检查（依赖 commit 前整树扫描 `StoreConsistency` flag + 事件系统，Phase 6 才落地），只保留 `subscribeToStore` + `updateStoreInstance` 这条被动检测路径——足够覆盖"外部 store 变化触发重渲染"这个可验证的主路径
+- [x] **useId**：mountId/updateId（`ReactFiberHooks.ts`）。官方还有 hydrate 分支（treeContext 的 `forkStack`/`idStack` 按组件树路径编码 id，保证 SSR/CSR 一致），本项目没有 `hydrateRoot`，永远走不到那个分支，只落地客户端分支——模块级自增计数器 `globalClientIdCounter` 生成 `:{identifierPrefix}r{n}:` 形式的 id。`identifierPrefix` 挂在 `FiberRootNode` 上，由 `createRoot(container, { identifierPrefix })` 透传（`ReactFiberReconciler.ts` 的 `createContainer` 新增第三个参数），`mountId` 通过新增的 `getWorkInProgressRoot()`（`ReactFiberWorkLoop.ts`）取当前渲染所属的 root
+  - 简化范围：不实现 `ReactFiberTreeContext.ts`（`forkStack`/`idStack`/base32 溢出编码），因为该机制只服务 hydration 路径一致性，本项目无 SSR 场景可对照
 
 #### 5.3.1 ReactFiberConcurrentUpdates（并发更新入队）
 
@@ -185,10 +180,9 @@
 
 #### 5.5 noop-renderer（测试渲染器）
 
-- 新建 `react-noop-renderer` 包（官方 packages/react-noop-renderer 对应用来测 reconciler 的宿主）
-  - 实现一套不操作真实 DOM 的 HostConfig（内存树），配合 useEffect 等副作用做确定性测试
+- 暂未实现，说明见文末「待实现 › 明确搁置」
 
-**阶段目标验收**：`useState` 管理状态并触发重渲染，`useEffect` 在 commit 后异步执行，且可通过 noop-renderer 单测断言副作用执行顺序。
+**阶段目标验收**：`useState` 管理状态并触发重渲染，`useEffect` 在 commit 后异步执行。
 
 ---
 
@@ -302,10 +296,14 @@
 
 #### 9.1 Suspense 完整实现
 
-- 捕获 Promise throw，显示 fallback，Promise resolve 后重新渲染（依赖 9.0 的 unwind 地基）
-- **OffscreenComponent**：`packages/react-reconciler/src/ReactFiberOffscreenComponent.ts`（官方 ReactFiberOffscreenComponent.old.js）—— Suspense 用它包裹主内容并隐藏，保留 Fiber 状态不销毁，等 Promise resolve 后可以直接恢复而不是重新挂载；需补 ReactWorkTags 的 OffscreenComponent tag
-- **use（试验性 hook）**：Suspense 的触发入口
-- 补 ReactSymbols 的 REACT_SUSPENSE_TYPE、ReactWorkTags 的 SuspenseComponent 等
+- [x] **捕获 Promise throw**：`throwException`（`ReactFiberThrow.ts`，对照官方 `isThenable` 分支）render 阶段读到 pending 状态的资源直接 `throw` 出对应的 Promise；`throwException` 识别出抛出值是 thenable 后，沿 `return` 链找最近未被标记 `ShouldCapture` 的 `SuspenseComponent`（`getNearestSuspenseBoundaryToCapture`），命中则 `markSuspenseBoundaryShouldCapture` 打 `ShouldCapture`，同时 `attachPingListener`（`root.pingCache` 记录已监听的 wakeable+lanes，避免重复挂 `then`）与 `attachRetryListener`（挂到 Suspense 边界自身 `updateQueue` 的 `Set<Wakeable>`，供 commit 阶段消费）
+- [x] **显示 fallback**：`unwindWork`（`ReactFiberUnwindWork.ts`）遇到打了 `ShouldCapture` 的 `SuspenseComponent` 翻转成 `DidCapture` 并重新进入 `updateSuspenseComponent`（`ReactFiberBeginWork.ts`）；`showFallback` 由 `DidCapture` 决定——`mount`/`update` 两个分支分别调用 `mountSuspenseFallbackChildren`/`updateSuspenseFallbackChildren`，用 `OffscreenComponent` 包裹 primary children（隐藏但不销毁）+ 正常渲染 fallback
+- [x] **OffscreenComponent**：`packages/react-reconciler/src/ReactFiberOffscreenComponent.ts`（官方 `ReactFiberOffscreenComponent.old.js` 简化版，`OffscreenState` 只保留 `baseLanes`，去掉 cachePool/transitions）—— Suspense 用它包裹主内容并隐藏，保留 Fiber 状态不销毁；`updateOffscreenComponent`（`ReactFiberBeginWork.ts`）始终正常 reconcile children（不做官方 hidden 时 bail-out-and-defer 到 OffscreenLane 的机制），隐藏效果完全交给 commit 阶段的 `Visibility` flag + `hideInstance`/`unhideInstance`（`ReactFiberCommitWork.ts` 的 `OffscreenComponent` 分支）处理
+- [x] **ping/retry 重渲染**：commit 阶段 `attachSuspenseRetryListeners`（`ReactFiberCommitWork.ts`）消费 Suspense 边界 `updateQueue` 里记录的 wakeable，挂上 `resolveRetryWakeable` 监听；Promise resolve 后触发 `pingSuspendedRoot`（`ReactFiberWorkLoop.ts`）用 `mergeLanes` 把之前挂起的 lanes 重新标记为待调度并 `ensureRootIsScheduled`，重渲染时 `updateSuspenseComponent` 读到资源已就绪（`AsyncBox` 不再 throw），正常渲染分支替换掉 fallback
+- 简化范围：不含 `SuspenseContext` 栈 / SSR dehydration / `SuspenseList`；`use`（试验性 hook）与 `lazy`（代码分割）暂未实现，留待 9.2 继续
+- 补 ReactSymbols 的 `REACT_SUSPENSE_TYPE`、ReactWorkTags 的 `SuspenseComponent`/`OffscreenComponent` 等
+
+**验收**：`fixtures/suspense`——单个 Suspense 挂起 2s 后从 fallback 自动切到真实内容；一个 Suspense 包裹两个异步子节点，两者都完成才整体切换；多个独立 Suspense 互不影响
 
 #### 9.2 forwardRef / memo / lazy / Portal
 
@@ -313,8 +311,10 @@
 - [x] **markRef / commitAttachRef / commitDetachRef**（`ReactFiberBeginWork.ts` + `ReactFiberCommitWork.ts`）：`markRef` 在 `updateHostComponent`/`finishClassComponent` 里调用——ref 引用变化（mount 时非空，或 update 时与上次不同）才打 `Ref` flag（`ForwardRef`/`MemoComponent` 自身不调用，只是把 `workInProgress.ref` 转发给内部 fiber，由内部 fiber 的 tag 决定要不要 markRef）；`Ref` 并入 `LayoutMask`，`commitAttachRef` 挂载/更新时在 `commitLayoutEffectsOnFiber` 末尾统一按 flag 调用（函数形式调用 `ref(instance)`，对象形式 `ref.current = instance`），`commitDetachRef` 在 `commitMutationEffectsOnFiber` 的 `HostComponent`/`ClassComponent` 分支（ref 变化）和 `commitDeletionEffectsOnFiber`（整体卸载）里调用
   - 简化范围：不做字符串 ref 的自动转换（`coerceRef`），`commitAttachRef`/`commitDetachRef` 遇到 `typeof ref === "string"` 直接跳过；`commitAttachRef` 对 HostComponent 不做官方的 `getPublicInstance` 包装（本项目 HostConfig 未实现该接口，直接用 `stateNode`，DOM 场景效果一致）
 - [x] **memo**（`packages/react/src/ReactMemo.ts` + reconciler 新增 `MemoComponent` WorkTag）：`memo(type, compare?)` 返回 `{ $$typeof: REACT_MEMO_TYPE, type, compare }`；`updateMemoComponent`（`ReactFiberBeginWork.ts`，简化版，不含官方 `SimpleMemoComponent` 快路径升级）mount 时直接用 `createFiberFromTypeAndProps` 建内部 fiber，update 时若无待处理更新/context，用 `compare`（默认 `shallowEqual`）比较新旧 props，props 相等且 `current.ref === workInProgress.ref` 才 bailout，否则 `createWorkInProgress` 克隆内部 fiber 继续渲染
-- **lazy**：动态 import 组件，配合 Suspense 实现代码分割（需补 REACT_LAZY_TYPE），依赖 9.1 Suspense，留待后续
-- **Portal**：createPortal 将子树渲染到其他 DOM 节点（需补 HostPortal 的 commit 空壳分支），留待后续
+- **lazy**：`packages/react/src/ReactLazy.ts` + reconciler 新增 `LazyComponent` WorkTag（16，对齐官方数值）。`lazy(ctor)` 返回 `{ $$typeof: REACT_LAZY_TYPE, _payload, _init }`，`_payload._status` 是简易状态机（Uninitialized/Pending/Resolved/Rejected），`_init(_payload)`（`lazyInitializer`）首次调用触发 `ctor()` 拿到 thenable，resolve 前直接 `throw` 这个 thenable——天然复用已有的 Suspense `throwException` 的 `isThenable` 分支，不需要新增挂起逻辑；resolve 后返回 `moduleObject.default`。`createFiberFromTypeAndProps`（`ReactFiber.ts`）按 `$$typeof` 分发出 `LazyComponent` tag；`mountLazyComponent`（`ReactFiberBeginWork.ts`，简化版）调用 `_init` 解析出真正的 Component，用 `shouldConstruct` 分流到 `updateClassComponent`/`updateFunctionComponent`，同时把 `workInProgress.tag`/`type` 改写成解析后的结果——下次渲染直接按普通组件走，不再经过 `LazyComponent` 分支，`completeWork` 不需要为它单独开分支
+  - 简化范围：不含 `resolveDefaultProps`（`Component.defaultProps` 合并）与热更新分支；只处理 `FunctionComponent`/`ClassComponent` 两种最常见的懒加载目标，不支持 `lazy` 包裹 `forwardRef`/`memo` 的组合场景
+- **Portal**：`packages/react-reconciler/src/ReactPortal.ts` 的 `createPortal(children, containerInfo, key?)` 返回 `{ $$typeof: REACT_PORTAL_TYPE, key, children, containerInfo, implementation: null }`，由 `packages/react-dom/index.ts` 转出对外（Portal 是 DOM 特定概念，放在 react-dom 而非 react 包）。`createFiberFromPortal`（`ReactFiber.ts`）建出 `HostPortal` fiber，`stateNode = { containerInfo, pendingChildren: null, implementation }`；`ReactChildFiber.ts` 新增 `isPortal` 判断（`$$typeof === REACT_PORTAL_TYPE`，Portal 元素不是 `isReactElement`）与 `updatePortal`/`reconcileSinglePortal`，接入 `createChild`/`updateSlot`/`updateFromMap`/`reconcileChildFibers` 顶层分发；`updatePortalComponent`（`ReactFiberBeginWork.ts`）结构与 `updateHostRoot` 平行，`pendingProps` 本身就是 children；`completeWork`/`commitMutationEffectsOnFiber` 各补一个 `HostPortal` case（本项目只支持 mutation 模式，官方 `updateHostContainer` 在 mutation 模式下是 no-op，效果上等同于 Fragment/Mode 的 default 分支，只是显式列出与官方结构对照）；`commitDeletionEffectsOnFiber` 补 `HostPortal` case——进入 Portal 后临时把 `hostParent`/`hostParentIsContainer` 切换成 Portal 自己的容器，子树里的 host 节点从这个容器里移除而不是外层 `hostParent`
+  - `commitPlacement`/`getHostSibling`/`isHostParent`/`appendAllChildren` 等 commit 侧骨架此前（Suspense/Class 组件阶段对照官方结构时）已预先补好 `HostPortal` 分支，本次不需要改动
 
 **简化范围**（渐进式搭建，明确取舍）：
 
@@ -339,18 +339,26 @@
 
 #### 9.4 性能优化策略
 
-- **eagerState**：dispatchSetState 时若 state 不变则提前 bailout，跳过整次调度（基础 bailout 已实现，eagerState 是 dispatch 侧优化）
-- **React.memo / useMemo / useCallback**：与 bailout 联动的 props 浅比较（见 9.2 / Phase 5.3）
+- [x] **eagerState**：`dispatchSetState`（`ReactFiberHooks.ts`）在 `fiber.lanes`/`alternate.lanes` 都为 `NoLanes`（queue 当前为空）时，用 `queue.lastRenderedReducer` 对 `queue.lastRenderedState` 提前算一次新值——若与当前值 `Object.is` 相等，走新增的 `enqueueConcurrentHookUpdateAndEagerlyBailout`（`ReactFiberConcurrentUpdates.ts`，lane 恒为 `NoLane` 入队但不冒泡不调度）直接跳过整次调度；否则把提前算好的值缓存到 `update.hasEagerState`/`eagerState` 上，`updateReducer` 重放时若 reducer 没变直接复用这个值，省一次重复调用。`dispatchReducerAction`（useReducer）不做这个优化（对照官方：eager 优化只在 `dispatchSetState` 分支里做）
+- [x] **React.memo / useMemo / useCallback**：与 bailout 联动的 props 浅比较（已实现，见 9.2 / Phase 5.3）
 
 ---
 
-### Phase 10: Hydrate / Legacy render（当前明确不做，仅记录范围）
+## 待实现
 
-> Lane 表里已经铺了 `SyncHydrationLane`/`InputContinuousHydrationLane`/`DefaultHydrationLane`/`SelectiveHydrationLane`/`IdleHydrationLane` 五条 hydration lane（对齐官方位表），但本项目 react-dom 简版目前只有 `createRoot`，没有 `hydrateRoot`/`ReactDOM.render`（legacy）。列出来是为了明确这是有意搁置，而不是遗漏：
+> 汇总当前所有未完成项，按「计划中」与「明确搁置」分组；各项详细设计见对应 Phase 小节。
 
-- **hydrateRoot**：SSR 场景下复用已有 DOM 而非新建，需要 `getIsHydrating`/`tryToClaimNextHydratableInstance` 等一整套匹配已有 DOM 节点的逻辑（`ReactFiberHydrationContext.ts`）
-- **legacy render（ReactDOM.render）**：LegacyRoot 模式，更新恒为 SyncLane，行为上更接近 React 17（无并发特性），本项目 ReactRootTags 已有 LegacyRoot 占位但未接入
-- **selective hydration**：并发模式下 hydration 与交互事件的优先级协调（用户点击未 hydrate 完的区域时优先 hydrate 该部分）
+### 计划中
+
+> 当前无计划中事项，主链路 + Phase 5~9 已全部完成（noop-renderer、Hydrate/Legacy render 明确搁置，见下）。
+
+### 明确搁置（暂不安排，仅记录范围）
+
+- **noop-renderer**（Phase 5.5）：新建 `react-noop-renderer` 包（官方 `packages/react-noop-renderer` 对应用来测 reconciler 的宿主），实现一套不操作真实 DOM 的 HostConfig（内存树），配合 useEffect 等副作用做确定性测试
+- **Phase 10 Hydrate / Legacy render**：Lane 表里已经铺了 `SyncHydrationLane`/`InputContinuousHydrationLane`/`DefaultHydrationLane`/`SelectiveHydrationLane`/`IdleHydrationLane` 五条 hydration lane（对齐官方位表），但本项目 react-dom 简版目前只有 `createRoot`，没有 `hydrateRoot`/`ReactDOM.render`（legacy）：
+  - **hydrateRoot**：SSR 场景下复用已有 DOM 而非新建，需要 `getIsHydrating`/`tryToClaimNextHydratableInstance` 等一整套匹配已有 DOM 节点的逻辑（`ReactFiberHydrationContext.ts`）
+  - **legacy render（ReactDOM.render）**：LegacyRoot 模式，更新恒为 SyncLane，行为上更接近 React 17（无并发特性），本项目 ReactRootTags 已有 LegacyRoot 占位但未接入
+  - **selective hydration**：并发模式下 hydration 与交互事件的优先级协调（用户点击未 hydrate 完的区域时优先 hydrate 该部分）
 
 ---
 

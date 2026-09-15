@@ -6,6 +6,7 @@
 import { createElement, isValidElement } from "./ReactElement";
 import { createContext } from "./ReactContext";
 import { forwardRef } from "./ReactForwardRef";
+import { lazy } from "./ReactLazy";
 import { memo } from "./ReactMemo";
 import { REACT_SUSPENSE_TYPE } from "shared/ReactSymbols";
 import { Component, PureComponent } from "./ReactBaseClasses";
@@ -22,6 +23,7 @@ import {
   useContext,
   useDeferredValue,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useReducer,
@@ -46,11 +48,13 @@ export {
   createElement,
   forwardRef,
   isValidElement,
+  lazy,
   memo,
   useCallback,
   useContext,
   useDeferredValue,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useReducer,
@@ -75,6 +79,7 @@ export default {
   createElement,
   forwardRef,
   isValidElement,
+  lazy,
   memo,
   useState,
   useReducer,
@@ -83,6 +88,7 @@ export default {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useTransition,
   useDeferredValue,

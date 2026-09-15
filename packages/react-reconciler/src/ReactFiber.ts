@@ -17,9 +17,11 @@ import {
   ForwardRef,
   Fragment,
   HostComponent,
+  HostPortal,
   HostRoot,
   HostText,
   IndeterminateComponent,
+  LazyComponent,
   MemoComponent,
   OffscreenComponent,
   SuspenseComponent,
@@ -29,6 +31,7 @@ import {
   REACT_PROVIDER_TYPE,
   REACT_CONTEXT_TYPE,
   REACT_FORWARD_REF_TYPE,
+  REACT_LAZY_TYPE,
   REACT_MEMO_TYPE,
   REACT_SUSPENSE_TYPE,
   REACT_OFFSCREEN_TYPE,
@@ -258,6 +261,9 @@ export function createFiberFromTypeAndProps(
       case REACT_MEMO_TYPE:
         fiberTag = MemoComponent;
         break;
+      case REACT_LAZY_TYPE:
+        fiberTag = LazyComponent;
+        break;
       default:
         throw new Error(
           `Element type is invalid: expected a string (for built-in components) ` +
@@ -377,5 +383,36 @@ export function createFiberFromText(
 ): FiberNode {
   const fiber = createFiber(HostText, content, null, mode);
   fiber.lanes = lanes;
+  return fiber;
+}
+
+// reconciler 不反向依赖 react-reconciler/src/ReactPortal 的具体类型（保持与 ReactElementLike
+// 一致的取舍），只声明用得到的字段。
+interface ReactPortalLike {
+  key: Key;
+  children: any;
+  containerInfo: any;
+  implementation: any;
+}
+
+/**
+ * 根据 Portal 创建 HostPortal 类型的 Fiber 节点
+ * @param portal - createPortal 创建的 Portal 对象
+ * @param mode - Fiber 所处的渲染模式
+ * @param lanes - Fiber 的优先级
+ */
+export function createFiberFromPortal(
+  portal: ReactPortalLike,
+  mode: TypeOfMode,
+  lanes: Lanes = NoLanes,
+): FiberNode {
+  const pendingProps = portal.children !== null ? portal.children : [];
+  const fiber = createFiber(HostPortal, pendingProps, portal.key, mode);
+  fiber.lanes = lanes;
+  fiber.stateNode = {
+    containerInfo: portal.containerInfo,
+    pendingChildren: null,
+    implementation: portal.implementation,
+  };
   return fiber;
 }

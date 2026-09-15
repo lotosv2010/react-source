@@ -13,6 +13,7 @@ import ReactSharedInternals from "shared/ReactSharedInternals";
 import is from "shared/objectIs";
 
 import type { FiberNode } from "./ReactFiber";
+import type { FiberRootNode } from "./ReactFiberRoot";
 import {
   Passive as PassiveEffect,
   Update as UpdateEffect,
@@ -31,6 +32,7 @@ import {
 import { markWorkInProgressReceivedUpdate } from "./ReactFiberBeginWork";
 import {
   enqueueConcurrentHookUpdate,
+  enqueueConcurrentHookUpdateAndEagerlyBailout,
   enqueueConcurrentRenderForLane,
 } from "./ReactFiberConcurrentUpdates";
 import {
@@ -40,6 +42,7 @@ import {
   type HookFlags,
 } from "./ReactHookEffectTags";
 import {
+  getWorkInProgressRoot,
   markSkippedUpdateLanes,
   requestEventTime,
   requestUpdateLane,
@@ -62,6 +65,8 @@ type Dispatch<A> = (action: A) => void;
 export interface Update<S, A> {
   lane: Lane;
   action: A;
+  hasEagerState: boolean;
+  eagerState: S | null;
   next: Update<S, A>;
 }
 
@@ -270,6 +275,8 @@ function updateReducer<S, A>(
         const clone: Update<S, A> = {
           lane: updateLane,
           action: update.action,
+          hasEagerState: update.hasEagerState,
+          eagerState: update.eagerState,
           next: null as any,
         };
         if (newBaseQueueLast === null) {
@@ -292,12 +299,20 @@ function updateReducer<S, A>(
           const clone: Update<S, A> = {
             lane: NoLane,
             action: update.action,
+            hasEagerState: update.hasEagerState,
+            eagerState: update.eagerState,
             next: null as any,
           };
           newBaseQueueLast.next = clone;
           newBaseQueueLast = clone;
         }
-        newState = reducer(newState, update.action);
+        // dispatchSetState 已经用当前 reducer 提前算过一次（eagerState），且入队时
+        // reducer 没有变化，直接复用那次结果，不用再调一次 reducer（对照官方 hasEagerState 分支）
+        if (update.hasEagerState) {
+          newState = update.eagerState as S;
+        } else {
+          newState = reducer(newState, update.action);
+        }
       }
       update = update.next;
     } while (update !== null && update !== first);
@@ -332,6 +347,30 @@ function mountRef<T>(initialValue: T): { current: T } {
 }
 
 function updateRef<T>(_initialValue: T): { current: T } {
+  const hook = updateWorkInProgressHook();
+  return hook.memoizedState;
+}
+
+// 对照官方 mountId：官方还有 hydrate 分支（treeContext 按组件树路径编码 id，保证 SSR/CSR
+// 一致），本项目没有 hydrateRoot，永远走不到那个分支，所以只落地客户端分支——用一个模块级
+// 自增计数器生成 :{prefix}r{n}: 形式的 id（小写 r 前缀对照官方"客户端生成"的语义）。
+// identifierPrefix 挂在 FiberRoot 上（createRoot 的 options.identifierPrefix），多个 root
+// 共存时用它区分各自的 id 空间。
+let globalClientIdCounter = 0;
+
+function mountId(): string {
+  const hook = mountWorkInProgressHook();
+  const root = getWorkInProgressRoot() as FiberRootNode;
+  const identifierPrefix = root.identifierPrefix;
+
+  const globalClientId = globalClientIdCounter++;
+  const id = ":" + identifierPrefix + "r" + globalClientId.toString(32) + ":";
+
+  hook.memoizedState = id;
+  return id;
+}
+
+function updateId(): string {
   const hook = updateWorkInProgressHook();
   return hook.memoizedState;
 }
@@ -765,42 +804,72 @@ function forceStoreRerender(fiber: FiberNode): void {
   }
 }
 
-// dispatchSetState/dispatchReducerAction 逻辑相同（本项目暂不做 eagerState 优化，见 Phase 9.4），
-// 保留两个名字只是对照官方两套 hook 各自的 dispatch 入口命名。
-function enqueueHookUpdate<S, A>(
-  fiber: FiberNode,
-  queue: UpdateQueue<S, A>,
-  action: A,
-  lane: Lane,
-): void {
-  const update: Update<S, A> = {
-    lane,
-    action,
-    next: null as any,
-  };
-  const eventTime = requestEventTime();
-  const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
-  if (root !== null) {
-    scheduleUpdateOnFiber(root, fiber, lane, eventTime);
-  }
-}
-
-function dispatchSetState<S, A>(
-  fiber: FiberNode,
-  queue: UpdateQueue<S, A>,
-  action: A,
-): void {
-  const lane = requestUpdateLane(fiber);
-  enqueueHookUpdate(fiber, queue, action, lane);
-}
-
 function dispatchReducerAction<S, A>(
   fiber: FiberNode,
   queue: UpdateQueue<S, A>,
   action: A,
 ): void {
   const lane = requestUpdateLane(fiber);
-  enqueueHookUpdate(fiber, queue, action, lane);
+
+  const update: Update<S, A> = {
+    lane,
+    action,
+    hasEagerState: false,
+    eagerState: null,
+    next: null as any,
+  };
+  const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
+  if (root !== null) {
+    scheduleUpdateOnFiber(root, fiber, lane, requestEventTime());
+  }
+}
+
+// 对照官方 dispatchSetState：queue 当前为空（fiber/alternate 都没有待处理的 lanes）时，
+// 用 lastRenderedReducer 提前对 lastRenderedState 算一次新值——如果算出来的新值和当前值
+// Object.is 相等，说明这次更新不会改变任何东西，直接用 NoLane 入队（不冒泡、不调度）即可
+// 完全跳过这次渲染；否则把提前算好的值缓存到 update.hasEagerState/eagerState 上，
+// updateReducer 重放时如果 reducer 没变就能直接复用，省一次重复调用。
+function dispatchSetState<S, A>(
+  fiber: FiberNode,
+  queue: UpdateQueue<S, A>,
+  action: A,
+): void {
+  const lane = requestUpdateLane(fiber);
+
+  const update: Update<S, A> = {
+    lane,
+    action,
+    hasEagerState: false,
+    eagerState: null,
+    next: null as any,
+  };
+
+  const alternate = fiber.alternate;
+  if (
+    fiber.lanes === NoLanes &&
+    (alternate === null || alternate.lanes === NoLanes)
+  ) {
+    const lastRenderedReducer = queue.lastRenderedReducer;
+    if (lastRenderedReducer !== null) {
+      try {
+        const currentState = queue.lastRenderedState as S;
+        const eagerState = lastRenderedReducer(currentState, action);
+        update.hasEagerState = true;
+        update.eagerState = eagerState;
+        if (is(eagerState, currentState)) {
+          enqueueConcurrentHookUpdateAndEagerlyBailout(fiber, queue, update);
+          return;
+        }
+      } catch {
+        // 提前计算出错则忽略，留给正式渲染阶段再抛一次
+      }
+    }
+  }
+
+  const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
+  if (root !== null) {
+    scheduleUpdateOnFiber(root, fiber, lane, requestEventTime());
+  }
 }
 
 // 渲染阶段外调用 hook（不合法调用）统一走这个 dispatcher，行为是直接抛错
@@ -822,6 +891,7 @@ const ContextOnlyDispatcher = {
   useDeferredValue: throwInvalidHookError,
   useSyncExternalStore: throwInvalidHookError,
   useContext: throwInvalidHookError,
+  useId: throwInvalidHookError,
 };
 
 const HooksDispatcherOnMount = {
@@ -838,6 +908,7 @@ const HooksDispatcherOnMount = {
   // useContext 不区分 mount/update：读取的是当前 context 值，不依赖上次渲染的 hook 状态
   // （官方两个 dispatcher 里都是同一个 readContext），不需要额外的 mountContext 包装
   useContext: readContext,
+  useId: mountId,
 };
 
 const HooksDispatcherOnUpdate = {
@@ -852,6 +923,7 @@ const HooksDispatcherOnUpdate = {
   useDeferredValue: updateDeferredValue,
   useSyncExternalStore: updateSyncExternalStore,
   useContext: readContext,
+  useId: updateId,
 };
 
 // 对照官方 renderWithHooks：渲染前重置 hook 相关模块状态、按 mount/update 切换 dispatcher，

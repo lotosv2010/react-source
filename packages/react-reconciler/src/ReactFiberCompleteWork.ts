@@ -191,6 +191,14 @@ function completeWork(
       bubbleProperties(workInProgress);
       return null;
     }
+    case HostPortal: {
+      // 官方在 mutation 模式下 updateHostContainer 是 no-op（Portal 的容器不会变，
+      // 变了会被当成新建/新的 Portal 处理），popHostContainer/preparePortalMount 依赖的
+      // host context 栈本项目未落地（同 attemptEarlyBailoutIfNoScheduledUpdate 的取舍），
+      // 这里只需要 bubbleProperties 把子树 flags/lanes 冒泡上去。
+      bubbleProperties(workInProgress);
+      return null;
+    }
     case HostComponent: {
       const type = workInProgress.type;
       if (current !== null && workInProgress.stateNode != null) {

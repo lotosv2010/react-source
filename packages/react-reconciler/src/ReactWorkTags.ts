@@ -12,7 +12,7 @@
 // Portal 等对应功能落地时再补，不提前铺数值。
 
 export type WorkTag =
-  0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 13 | 14 | 22;
+  0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 13 | 14 | 16 | 22;
 
 export const FunctionComponent = 0;
 export const ClassComponent = 1;
@@ -28,4 +28,5 @@ export const ContextProvider = 10;
 export const ForwardRef = 11;
 export const SuspenseComponent = 13;
 export const MemoComponent = 14;
+export const LazyComponent = 16;
 export const OffscreenComponent = 22;
