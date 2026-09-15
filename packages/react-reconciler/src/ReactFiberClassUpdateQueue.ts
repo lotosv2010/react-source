@@ -139,6 +139,29 @@ export function enqueueUpdate<State>(
   return enqueueConcurrentClassUpdate(fiber, sharedQueue, update, lane);
 }
 
+/**
+ * 对照官方 enqueueCapturedUpdate：throwException 找到错误边界后，把 capture update 直接接到
+ * 它的 base 队列尾部（不经过 shared.pending，跳过并发暂存——unwind 发生在 render 阶段内部，
+ * 不需要等下一次 prepareFreshStack 才刷回）。
+ *
+ * 简化范围：省略官方"queue 与 current 共享则先克隆"的分支——能走到这里的边界 fiber 必然已在
+ * 本次渲染中执行过 mountClassInstance（initializeUpdateQueue）或 updateClassInstance
+ * （cloneUpdateQueue），queue 此时已独立于 current，不会命中共享分支。
+ */
+export function enqueueCapturedUpdate<State>(
+  workInProgress: FiberNode,
+  capturedUpdate: Update<State>,
+): void {
+  const queue: UpdateQueue<State> = workInProgress.updateQueue;
+  const lastBaseUpdate = queue.lastBaseUpdate;
+  if (lastBaseUpdate === null) {
+    queue.firstBaseUpdate = capturedUpdate;
+  } else {
+    lastBaseUpdate.next = capturedUpdate;
+  }
+  queue.lastBaseUpdate = capturedUpdate;
+}
+
 // 对照官方模块级 hasForceUpdate：processUpdateQueue 处理到 ForceUpdate 类型的 update 时置真，
 // beginWork 据此跳过"state 没变就 bailout"的判断——forceUpdate 语义就是"即使 state 引用不变也要重渲染"。
 let hasForceUpdate = false;
@@ -168,7 +191,11 @@ function getStateFromUpdate<State>(
       return payload;
     }
     case CaptureUpdate: {
-      // 捕获的 update（错误边界重放），本项目尚未实现，直接走 UpdateState 语义
+      // 捕获的 update（错误边界重放）：即使 shouldComponentUpdate 会拦截，fallback 渲染也
+      // 必须强制执行，复用 hasForceUpdate 短路 updateClassInstance 里的 sCU 判断。
+      // 对照官方：故意 fallthrough 到 UpdateState，两者 payload 合并语义完全一致，
+      // CaptureUpdate 只是额外强制更新。
+      hasForceUpdate = true;
     }
     case UpdateState: {
       const payload = update.payload;

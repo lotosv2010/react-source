@@ -19,6 +19,7 @@ import {
 import {
   constructClassInstance,
   mountClassInstance,
+  resumeMountClassInstance,
   updateClassInstance,
 } from "./ReactFiberClassComponent";
 import {
@@ -179,8 +180,10 @@ function finishClassComponent(
   return workInProgress.child;
 }
 
-// 对照官方 updateClassComponent：current === null 是"resumeMountClassInstance"场景
-// （本项目无可恢复的中断渲染，不会命中），恒走 updateClassInstance 计算 shouldUpdate。
+// 对照官方 updateClassComponent：current === null 是 resumeMountClassInstance 场景——
+// 边界组件自身在本次渲染中首次挂载，子树抛错后 unwindWork 把它标记 DidCapture 重新进入
+// beginWork（此时 stateNode 已由第一次 beginWork 的 constructClassInstance 建好，
+// 只是还没走完 finishClassComponent，current 依旧是 null）。
 function updateClassComponent(
   current: FiberNode | null,
   workInProgress: FiberNode,
@@ -188,13 +191,21 @@ function updateClassComponent(
   nextProps: any,
   renderLanes: Lanes,
 ): FiberNode | null {
-  const shouldUpdate = updateClassInstance(
-    current as FiberNode,
-    workInProgress,
-    Component,
-    nextProps,
-    renderLanes,
-  );
+  const shouldUpdate =
+    current === null
+      ? resumeMountClassInstance(
+          workInProgress,
+          Component,
+          nextProps,
+          renderLanes,
+        )
+      : updateClassInstance(
+          current,
+          workInProgress,
+          Component,
+          nextProps,
+          renderLanes,
+        );
   return finishClassComponent(
     current,
     workInProgress,

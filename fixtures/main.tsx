@@ -9,6 +9,7 @@ import runEventsDemo from "./events/index";
 import runContextDemo from "./context/index";
 import runClassDemo from "./class/index";
 import runForwardRefMemoDemo from "./forwardref-memo/index";
+import runErrorBoundaryDemo from "./error-boundary/index";
 
 // react-dom 简版（createRoot）已落地，HostConfig 由构建时 fork 注入，
 // 这里先只验证 createElement/jsx 能不能正常产出 element 对象。
@@ -35,6 +36,10 @@ runClassDemo();
 
 // forwardRef/memo 验证：ref 转发到内部 DOM 节点 + 浅比较跳过重渲染（Phase 9.2）
 runForwardRefMemoDemo();
+
+// 错误边界验证：render 阶段抛错的 unwind 地基 + getDerivedStateFromError/componentDidCatch
+// + 无边界兜底卸载整棵树（Phase 9.0/9.3）
+runErrorBoundaryDemo();
 
 const root = createRoot(document.getElementById("root")!);
 root.render(

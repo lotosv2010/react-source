@@ -290,11 +290,15 @@
 
 #### 9.0 ReactFiberThrow / ReactFiberUnwindWork（unwind 地基）
 
-- `packages/react-reconciler/src/ReactFiberThrow.ts`（官方 ReactFiberThrow.old.js）
-  - `throwException`：render 阶段捕获到 throw（Promise 或普通 Error）后，沿 `return` 链向上找最近的 Suspense/错误边界 Fiber，标记 `ShouldCapture`
-- `packages/react-reconciler/src/ReactFiberUnwindWork.ts`（官方 ReactFiberUnwindWork.old.js）
-  - `unwindWork`：completeUnitOfWork 的 Incomplete 分支调用，沿路径向上清理未完成的栈（context/host context 等 `pop`），找到 `ShouldCapture` 的边界后转 `DidCapture`，从该节点重新进入 beginWork 渲染 fallback/错误 UI
-  - 这套机制是 Suspense（9.1）与错误边界（9.3）共用的同一地基，不是各自独立实现
+- [x] `packages/react-reconciler/src/ReactFiberThrow.ts`（官方 ReactFiberThrow.js）
+  - `throwException`：给抛错的 fiber 打 `Incomplete`，沿 `return` 链向上找最近的 `ClassComponent`（实现 `getDerivedStateFromError`/`componentDidCatch`）或兜底 `HostRoot`，命中后打 `ShouldCapture` 并 `enqueueCapturedUpdate` 塞一条 `CaptureUpdate`
+  - `createClassErrorUpdate`：payload/callback 复用现有消费链路——`getDerivedStateFromError` 返回值走 `processUpdateQueue` 的浅合并语义，`componentDidCatch` 走 `commitClassCallbacks`（layout 子阶段统一执行），不需要新增专门的 commit 分支
+  - `createRootErrorUpdate`：没有任何边界捕获时的兜底，`payload = {element: null}` 卸载整棵树，`callback` 里 `console.error(error)`
+- [x] `packages/react-reconciler/src/ReactFiberUnwindWork.ts`（官方 ReactFiberUnwindWork.js）
+  - `unwindWork`：completeUnitOfWork 的 `Incomplete` 分支调用，`ClassComponent`/`HostRoot` 命中 `ShouldCapture` 就翻转成 `DidCapture` 并返回该 fiber（重新进入 beginWork 渡染 fallback）；`ContextProvider` 主动 `popProvider` 做栈清理（它跳过了自己的 completeWork，栈会错位）；其余返回 null 继续向上
+- [x] `ReactFiberWorkLoop.ts`：`renderRootSync`/`renderRootConcurrent` 把 `workLoopSync()`/`workLoopConcurrent()` 包进 `do/try/catch` 循环，捕获到异常调用新增的 `handleError`（`throwException` + `completeUnitOfWork`）；`completeUnitOfWork` 的 `Incomplete` 分支调用 `unwindWork`，找到边界则设为新的 `workInProgress`（`flags &= HostEffectMask` 清掉非法的 commit 标记），没找到则把 `Incomplete` 继续向上传播并清空 `subtreeFlags`/`deletions`
+  - 这套机制是 Suspense（9.1）与错误边界（9.3）共用的同一地基，不是各自独立实现——当前只有 9.3 消费了它（`ClassComponent` 分支），9.1 落地时 `unwindWork`/`throwException` 需要再补 `SuspenseComponent`/`OffscreenComponent`/Promise 分支
+  - **简化范围**：`throwException` 只处理 class 错误边界，不含 Suspense 的 Promise/thenable 判断（留给 9.1）；不追踪 componentStack
 
 #### 9.1 Suspense 完整实现
 
@@ -321,9 +325,17 @@
 
 #### 9.3 错误边界与异常处理
 
-- **ErrorBoundary**：class 组件实现 getDerivedStateFromError / componentDidCatch
-- **捕获与回退**：render / lifecycle / commit 抛错 → throwException（9.0）沿 return 链向上找最近的错误边界 Fiber → 标记 DidCapture → unwindWork（9.0）渲染 fallback
-- **retry**：错误边界捕获后重新渲染（重置 DidCapture → 重走 render 阶段）
+- [x] **ErrorBoundary**：class 组件实现 `getDerivedStateFromError`/`componentDidCatch`，捕获流程完全复用 9.0 的 `throwException`/`unwindWork` 地基，没有新增 commit 代码
+- [x] **捕获与回退**：render 阶段抛错 → `throwException`（9.0）沿 `return` 链找最近的错误边界 → 标记 `ShouldCapture` → `unwindWork`（9.0）翻转 `DidCapture` → 重新进入 `updateClassComponent`（`ReactFiberBeginWork.ts`）
+  - `updateClassComponent` 新增分流：`current === null` 时说明边界组件自身也是本次渲染首次挂载（第一次 beginWork 已经 `constructClassInstance`/`mountClassInstance` 过），走新增的 `resumeMountClassInstance`（`ReactFiberClassComponent.ts`，官方同名函数的简化版）消费 `CaptureUpdate` 算出 fallback state；`current !== null`（边界组件是复用的已挂载节点）则仍走原有 `updateClassInstance`——`CaptureUpdate` 塞进它的 base 队列，走 `processUpdateQueue` 时被消费
+  - `getStateFromUpdate`（`ReactFiberClassUpdateQueue.ts`）的 `CaptureUpdate` 分支：`hasForceUpdate = true` 后 fallthrough 到 `UpdateState`（浅合并语义相同，额外强制跳过 `shouldComponentUpdate` 短路）
+- **retry**：本次未新增任何机制——错误边界捕获后，用户在 `componentDidCatch`/fallback UI 里手动 `setState` 即可触发正常更新流程重新挂载被卸载的子树，这条路径天然可行，不需要额外代码
+- **简化范围**（本次明确不做，留待后续）：
+  - commit 阶段生命周期（`componentDidMount`/`componentDidUpdate`/`componentWillUnmount`/`getSnapshotBeforeUpdate`）抛错仍然直接冒泡崩溃——官方用独立的 `captureCommitPhaseError` 机制处理（commit 完成后同步触发一次新的渲染），不复用 `throwException`/`unwindWork`，属于新的一块地基，本次未实现
+  - 不追踪 componentStack（`componentDidCatch` 的第二个参数恒为 `{componentStack: ""}`）
+  - `HostRoot` 兜底（无任何边界捕获）只做整棵树卸载 + `console.error`，不做官方的 `logCapturedError` 格式化
+
+**验收**：`fixtures/error-boundary`——挂载时立即抛错（`MountBombDemo`）、更新时抛错（`UpdateBombDemo`，点击按钮后触发）均被 `ErrorBoundary` 捕获显示 fallback UI 并打印 `componentDidCatch` 日志，点击"重置"能恢复；无边界包裹的 `NoBoundaryDemo` 触发后整棵树被卸载且控制台打印 `console.error`
 
 #### 9.4 性能优化策略
 

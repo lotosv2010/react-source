@@ -16,7 +16,14 @@ import {
 } from "./ReactFiberCommitWork";
 import type { FiberNode } from "./ReactFiber";
 import { createWorkInProgress } from "./ReactFiber";
-import { Incomplete, NoFlags, Passive } from "./ReactFiberFlags";
+import {
+  HostEffectMask,
+  Incomplete,
+  NoFlags,
+  Passive,
+} from "./ReactFiberFlags";
+import { throwException } from "./ReactFiberThrow";
+import { unwindWork } from "./ReactFiberUnwindWork";
 import {
   DefaultLane,
   NoLane,
@@ -240,7 +247,23 @@ function completeUnitOfWork(unitOfWork: FiberNode): void {
         return;
       }
     } else {
-      // 节点因抛错未完成，unwind 留到错误处理落地时实现
+      // 节点因抛错未完成：unwind 沿 return 链找 throwException 标记了 ShouldCapture 的
+      // 边界（对照官方 unwindWork），找到就把它设为下一个 workInProgress 重新进入 beginWork
+      // 渡染 fallback，不再查兄弟节点（abort 语义，与正常 complete 分支互斥）；没找到则把
+      // Incomplete 继续向上传播，subtreeFlags/deletions 清空（半成品子树的 effect 不该生效）。
+      const next = unwindWork(completedWork);
+
+      if (next !== null) {
+        next.flags &= HostEffectMask;
+        workInProgress = next;
+        return;
+      }
+
+      if (returnFiber !== null) {
+        returnFiber.flags |= Incomplete;
+        returnFiber.subtreeFlags = NoFlags;
+        returnFiber.deletions = null;
+      }
     }
 
     const siblingFiber = completedWork.sibling;
@@ -260,6 +283,26 @@ function completeUnitOfWork(unitOfWork: FiberNode): void {
   }
 }
 
+// 对照官方 handleError：render 阶段 throw 被 workLoop 的 try/catch 捕获后调用——
+// throwException 沿 return 链标记最近的错误边界（或兜底 HostRoot），completeUnitOfWork
+// 紧接着从抛错的 fiber 开始 unwind，找到边界后把它设为新的 workInProgress，
+// 外层 do/while 循环会从那里继续 workLoopSync/workLoopConcurrent 渡染 fallback。
+function handleError(root: FiberRootNode, thrownValue: any): void {
+  const erroredWork = workInProgress;
+  if (erroredWork === null) {
+    throw thrownValue;
+  }
+
+  throwException(
+    root,
+    erroredWork.return,
+    erroredWork,
+    thrownValue,
+    workInProgressRootRenderLanes,
+  );
+  completeUnitOfWork(erroredWork);
+}
+
 // 对照官方 renderRootSync：进入 RenderContext，必要时准备新栈，跑同步 workLoop。
 // 同步渲染必须完成整棵树，workInProgress 非空说明出了 bug。
 function renderRootSync(root: FiberRootNode, lanes: Lanes): number {
@@ -270,7 +313,14 @@ function renderRootSync(root: FiberRootNode, lanes: Lanes): number {
     prepareFreshStack(root, lanes);
   }
 
-  workLoopSync();
+  do {
+    try {
+      workLoopSync();
+      break;
+    } catch (thrownValue) {
+      handleError(root, thrownValue);
+    }
+  } while (true);
   // 渲染阶段结束（正常完成或本函数即将 throw），重置 context 依赖收集状态，
   // 避免渲染阶段外误读到上一次渲染残留的 currentlyRenderingFiber
   resetContextDependencies();
@@ -302,7 +352,14 @@ function renderRootConcurrent(root: FiberRootNode, lanes: Lanes): number {
     prepareFreshStack(root, lanes);
   }
 
-  workLoopConcurrent();
+  do {
+    try {
+      workLoopConcurrent();
+      break;
+    } catch (thrownValue) {
+      handleError(root, thrownValue);
+    }
+  } while (true);
   // 时间片用完中途让出，或整棵树渲染完成，都要重置 context 依赖收集状态
   resetContextDependencies();
 

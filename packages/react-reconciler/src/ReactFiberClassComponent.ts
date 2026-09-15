@@ -218,6 +218,44 @@ export function updateClassInstance(
   return shouldUpdate;
 }
 
+/**
+ * 边界组件本身也在本次渲染中首次挂载（current === null），但它的 render() 已经跑过
+ * （finishClassComponent 在第一次 beginWork 时执行），子树抛错后 unwindWork 把它标记为
+ * DidCapture 并重新进入 beginWork——此时 stateNode/updateQueue 已由 mountClassInstance
+ * 初始化好，只需要消费 throwException 塞进去的 CaptureUpdate 算出 fallback state。
+ * 对照官方 resumeMountClassInstance（简化版：省略 hasForceUpdate 为 false 时的
+ * shouldComponentUpdate 判断，CaptureUpdate 必然已把 hasForceUpdate 置真，恒强制渲染）。
+ */
+export function resumeMountClassInstance(
+  workInProgress: FiberNode,
+  Component: any,
+  newProps: any,
+  renderLanes: Lanes,
+): boolean {
+  const instance = workInProgress.stateNode;
+
+  resetHasForceUpdateBeforeProcessing();
+  processUpdateQueue(workInProgress, newProps, instance, renderLanes);
+
+  const getDerivedStateFromProps = Component.getDerivedStateFromProps;
+  if (typeof getDerivedStateFromProps === "function") {
+    applyDerivedStateFromProps(
+      workInProgress,
+      getDerivedStateFromProps,
+      newProps,
+    );
+  }
+
+  instance.props = newProps;
+  instance.state = workInProgress.memoizedState;
+
+  if (typeof instance.componentDidMount === "function") {
+    workInProgress.flags |= UpdateEffect;
+  }
+
+  return true;
+}
+
 // 对照官方 checkShouldComponentUpdate：优先取用户定义的 shouldComponentUpdate，
 // 其次是 PureComponent 的浅比较，都没有则默认总是更新（class 组件的默认行为）
 function checkShouldComponentUpdate(
