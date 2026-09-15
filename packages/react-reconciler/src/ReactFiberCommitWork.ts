@@ -13,17 +13,22 @@ import {
   Ref,
   Snapshot,
   Update,
+  Visibility,
 } from "./ReactFiberFlags";
 import {
   appendChild,
   appendChildToContainer,
   commitTextUpdate,
   commitUpdate,
+  hideInstance,
+  hideTextInstance,
   insertBefore,
   insertInContainerBefore,
   removeChild,
   removeChildFromContainer,
   supportsMutation,
+  unhideInstance,
+  unhideTextInstance,
 } from "./ReactFiberConfig";
 import type { Lanes } from "./ReactFiberLane";
 import type { FiberRootNode } from "./ReactFiberRoot";
@@ -44,7 +49,12 @@ import {
   HostRoot,
   HostText,
   MemoComponent,
+  OffscreenComponent,
+  SuspenseComponent,
 } from "./ReactWorkTags";
+import type { OffscreenInstance } from "./ReactFiberOffscreenComponent";
+import type { Wakeable } from "shared/ReactTypes";
+import { resolveRetryWakeable } from "./ReactFiberWorkLoop";
 
 // 删除操作需要在向上回溯过程中临时记住"最近的 host 父节点"，官方用模块级变量在
 // commitDeletionEffectsOnFiber 递归间传递。
@@ -248,7 +258,6 @@ function commitPlacement(finishedWork: FiberNode): void {
 
   // 向上找到最近的 host 父 fiber，把整棵 Placement 子树插入
   const parentFiber = getHostParentFiber(finishedWork);
-
   switch (parentFiber.tag) {
     case HostComponent: {
       const parent = parentFiber.stateNode;
@@ -504,6 +513,77 @@ function recursivelyTraverseMutationEffects(
   }
 }
 
+// 对照官方 hideOrUnhideAllChildren：只递归到子树里最外层的 host 节点就停手——嵌套的
+// Offscreen 如果自己也是隐藏态，它内部的 host 节点已经被隐藏过，不需要重复处理。
+function hideOrUnhideAllChildren(
+  finishedWork: FiberNode,
+  isHidden: boolean,
+): void {
+  let node: FiberNode = finishedWork;
+  while (true) {
+    if (node.tag === HostComponent) {
+      const instance = node.stateNode;
+      if (isHidden) {
+        hideInstance(instance);
+      } else {
+        unhideInstance(instance, node.memoizedProps);
+      }
+    } else if (node.tag === HostText) {
+      const instance = node.stateNode;
+      if (isHidden) {
+        hideTextInstance(instance);
+      } else {
+        unhideTextInstance(instance, node.memoizedProps);
+      }
+    } else if (
+      (node.tag === OffscreenComponent || node.tag === SuspenseComponent) &&
+      node !== finishedWork
+    ) {
+      // 嵌套的 Offscreen/Suspense 交给它自己的 commit 分支处理，这里不下探
+    } else if (node.child !== null) {
+      node.child.return = node;
+      node = node.child;
+      continue;
+    }
+    if (node === finishedWork) {
+      return;
+    }
+    while (node.sibling === null) {
+      if (node.return === null || node.return === finishedWork) {
+        return;
+      }
+      node = node.return;
+    }
+    node.sibling.return = node.return;
+    node = node.sibling;
+  }
+}
+
+// 对照官方 attachSuspenseRetryListeners：从 Suspense 边界的 updateQueue（Set<Wakeable>，
+// throwException 阶段的 attachRetryListener 写入）取出本次新挂起的 wakeable，用
+// finishedWork.stateNode 上的 retry 缓存去重，避免同一个 wakeable 被挂多次 then 监听。
+function attachSuspenseRetryListeners(finishedWork: FiberNode): void {
+  const wakeables: Set<Wakeable> | null = finishedWork.updateQueue;
+  if (wakeables === null) {
+    return;
+  }
+  finishedWork.updateQueue = null;
+
+  let retryCache: Set<Wakeable> | null = finishedWork.stateNode;
+  if (retryCache === null) {
+    retryCache = new Set();
+    finishedWork.stateNode = retryCache;
+  }
+
+  wakeables.forEach((wakeable) => {
+    if (!retryCache!.has(wakeable)) {
+      retryCache!.add(wakeable);
+      const retry = resolveRetryWakeable.bind(null, finishedWork, wakeable);
+      wakeable.then(retry, retry);
+    }
+  });
+}
+
 function commitMutationEffectsOnFiber(
   finishedWork: FiberNode,
   root: FiberRootNode,
@@ -590,6 +670,31 @@ function commitMutationEffectsOnFiber(
       if (flags & Ref) {
         if (current !== null) {
           commitDetachRef(current);
+        }
+      }
+      return;
+    }
+    case SuspenseComponent: {
+      recursivelyTraverseMutationEffects(root, finishedWork, lanes);
+      commitReconciliationEffects(finishedWork);
+
+      // Visibility flag 打在子 Offscreen fiber 上（completeWork 阶段），真正的隐藏/显示
+      // 切换由 OffscreenComponent 自己的 case 处理，这里只负责挂 retry 监听
+      if (flags & Update) {
+        attachSuspenseRetryListeners(finishedWork);
+      }
+      return;
+    }
+    case OffscreenComponent: {
+      recursivelyTraverseMutationEffects(root, finishedWork, lanes);
+      commitReconciliationEffects(finishedWork);
+
+      if (flags & Visibility) {
+        const offscreenInstance: OffscreenInstance = finishedWork.stateNode;
+        const isHidden = finishedWork.pendingProps.mode === "hidden";
+        offscreenInstance.isHidden = isHidden;
+        if (supportsMutation) {
+          hideOrUnhideAllChildren(finishedWork, isHidden);
         }
       }
       return;

@@ -16,6 +16,7 @@ import {
 import type { RootTag } from "./ReactRootTags";
 import { initializeUpdateQueue } from "./ReactFiberClassUpdateQueue";
 import type { Container } from "./ReactFiberConfig";
+import type { Wakeable } from "shared/ReactTypes";
 
 // 对照官方 packages/react-reconciler/src/ReactFiberRoot.new.js：官方 FiberRootNode 还带
 // 大量优先级/调度字段（eventTimes、expirationTimes、entangledLanes 等），这些服务于
@@ -49,6 +50,8 @@ export class FiberRootNode {
   entangledLanes: Lanes;
   // 每条 lane 与之纠缠的 lanes 集合（index = laneToIndex）
   entanglements: Lanes[];
+  // Suspense 挂起时 attachPingListener 用来去重同一个 wakeable 的监听（Phase 9.1）
+  pingCache: WeakMap<Wakeable, Set<Lanes>> | null;
 
   constructor(containerInfo: Container, tag: RootTag) {
     this.tag = tag;
@@ -68,6 +71,7 @@ export class FiberRootNode {
     this.expiredLanes = NoLanes;
     this.entangledLanes = NoLanes;
     this.entanglements = createLaneMap(NoLanes);
+    this.pingCache = null;
   }
 }
 

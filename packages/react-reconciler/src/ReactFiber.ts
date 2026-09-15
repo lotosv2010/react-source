@@ -21,6 +21,8 @@ import {
   HostText,
   IndeterminateComponent,
   MemoComponent,
+  OffscreenComponent,
+  SuspenseComponent,
   type WorkTag,
 } from "./ReactWorkTags";
 import {
@@ -28,7 +30,10 @@ import {
   REACT_CONTEXT_TYPE,
   REACT_FORWARD_REF_TYPE,
   REACT_MEMO_TYPE,
+  REACT_SUSPENSE_TYPE,
+  REACT_OFFSCREEN_TYPE,
 } from "shared/ReactSymbols";
+import type { OffscreenInstance } from "./ReactFiberOffscreenComponent";
 
 // 对照官方 packages/react-reconciler/src/ReactFiber.new.js：FiberNode 官方不用 class（用
 // function 构造器 + new），这里为了 TS 里字段声明更直观改用 class，字段集合和初始值保持一致。
@@ -232,6 +237,10 @@ export function createFiberFromTypeAndProps(
     fiberTag = HostComponent;
   } else if (type === REACT_FRAGMENT_TYPE) {
     return createFiberFromFragment(pendingProps.children, mode, lanes, key);
+  } else if (type === REACT_SUSPENSE_TYPE) {
+    return createFiberFromSuspense(pendingProps, mode, lanes, key);
+  } else if (type === REACT_OFFSCREEN_TYPE) {
+    return createFiberFromOffscreen(pendingProps, mode, lanes, key);
   } else if (typeof type === "object" && type !== null) {
     // <Context.Provider>/<Context.Consumer> 元素的 type 是 createContext 生成的
     // Provider/Context 对象本身（不是函数），forwardRef()/memo() 返回的也是对象而非函数，
@@ -308,6 +317,50 @@ export function createFiberFromFragment(
 ): FiberNode {
   const fiber = createFiber(Fragment, elements, key, mode);
   fiber.lanes = lanes;
+  return fiber;
+}
+
+/**
+ * 创建 SuspenseComponent 类型的 Fiber 节点
+ * @param pendingProps - Suspense 的 props（fallback/children）
+ * @param mode - Fiber 所处的渲染模式
+ * @param lanes - Fiber 的优先级
+ * @param key - 元素 key
+ */
+export function createFiberFromSuspense(
+  pendingProps: any,
+  mode: TypeOfMode,
+  lanes: Lanes,
+  key: Key,
+): FiberNode {
+  const fiber = createFiber(SuspenseComponent, pendingProps, key, mode);
+  fiber.elementType = REACT_SUSPENSE_TYPE;
+  fiber.type = REACT_SUSPENSE_TYPE;
+  fiber.lanes = lanes;
+  return fiber;
+}
+
+/**
+ * 创建 OffscreenComponent 类型的 Fiber 节点
+ * @param pendingProps - Offscreen 的 props（mode/children）
+ * @param mode - Fiber 所处的渲染模式
+ * @param lanes - Fiber 的优先级
+ * @param key - 元素 key
+ */
+export function createFiberFromOffscreen(
+  pendingProps: any,
+  mode: TypeOfMode,
+  lanes: Lanes,
+  key: Key,
+): FiberNode {
+  const fiber = createFiber(OffscreenComponent, pendingProps, key, mode);
+  fiber.elementType = REACT_OFFSCREEN_TYPE;
+  fiber.type = REACT_OFFSCREEN_TYPE;
+  fiber.lanes = lanes;
+  // OffscreenInstance：isHidden 供 commitWork 判断上一次的隐藏态，决定是否需要
+  // hideOrUnhideAllChildren（对照官方 stateNode 的用途）
+  const instance: OffscreenInstance = { isHidden: false };
+  fiber.stateNode = instance;
   return fiber;
 }
 

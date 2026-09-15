@@ -25,6 +25,10 @@ export const Ref = /*                          */ 0b00000000000000001000000000;
 export const Snapshot = /*                     */ 0b00000000000000010000000000;
 export const Passive = /*                      */ 0b00000000000000100000000000;
 
+// Suspense/Offscreen 切换隐藏/显示态时打的标记（Phase 9.1），commit 阶段据此调用
+// hideInstance/unhideInstance
+export const Visibility = /*                   */ 0b00000000000010000000000000;
+
 export const LifecycleEffectMask = Passive | Update | Callback | Ref | Snapshot;
 
 // 所有 commit 阶段 flag 的并集（生命周期只存在于单次 commit）
@@ -40,7 +44,7 @@ export const RefStatic = /*                    */ 0b00001000000000000000000000;
 
 // commit 各阶段用来跳过不含对应 effect 子树的掩码
 export const MutationMask =
-  Placement | Update | ChildDeletion | ContentReset | Ref;
+  Placement | Update | ChildDeletion | ContentReset | Ref | Visibility;
 
 // 对照官方 LayoutMask/PassiveMask：commit 的 layout/passive 子阶段据此跳过不含对应
 // effect 的子树。Callback 并入 LayoutMask——setState/forceUpdate 的回调也在 layout 子阶段

@@ -7,7 +7,7 @@
 import type { ReactContext } from "shared/ReactTypes";
 
 import type { FiberNode } from "./ReactFiber";
-import { NoFlags, Update, type Flags } from "./ReactFiberFlags";
+import { NoFlags, Update, Visibility, type Flags } from "./ReactFiberFlags";
 import {
   appendInitialChild,
   createInstance,
@@ -34,7 +34,11 @@ import {
   IndeterminateComponent,
   MemoComponent,
   Mode,
+  OffscreenComponent,
+  SuspenseComponent,
 } from "./ReactWorkTags";
+import type { OffscreenState } from "./ReactFiberOffscreenComponent";
+import type { SuspenseState } from "./ReactFiberThrow";
 
 function markUpdate(workInProgress: FiberNode): void {
   // 打 Update 标记：让 Placement 变成 PlacementAndUpdate
@@ -255,6 +259,36 @@ function completeWork(
           getHostContext(),
           workInProgress,
         );
+      }
+      bubbleProperties(workInProgress);
+      return null;
+    }
+    case SuspenseComponent: {
+      // DidCapture 未被 beginWork 清掉（updateSuspenseComponent 命中挂起分支会清掉它，
+      // 这里能看到说明是嵌套 Suspense 的外层，本次遍历不用管，交给外层自己的完成阶段处理）
+      const nextState: SuspenseState | null = workInProgress.memoizedState;
+      const prevState: SuspenseState | null =
+        current !== null ? current.memoizedState : null;
+      // 展示 fallback/primary 的状态发生变化：给内部 Offscreen fiber 打 Visibility flag，
+      // 供 commit 阶段 hideOrUnhideAllChildren 实际切换 DOM 显隐
+      if ((nextState === null) !== (prevState === null)) {
+        const offscreenFiber = workInProgress.child as FiberNode;
+        offscreenFiber.flags |= Visibility;
+      }
+      // updateQueue 是 attachRetryListener 存的 Set<Wakeable>，非空说明本次渲染新挂起了，
+      // 需要在 commit 阶段真正挂上 wakeable.then 监听
+      if (workInProgress.updateQueue !== null) {
+        workInProgress.flags |= Update;
+      }
+      bubbleProperties(workInProgress);
+      return null;
+    }
+    case OffscreenComponent: {
+      const nextState: OffscreenState | null = workInProgress.memoizedState;
+      const prevState: OffscreenState | null =
+        current !== null ? current.memoizedState : null;
+      if ((nextState === null) !== (prevState === null)) {
+        workInProgress.flags |= Visibility;
       }
       bubbleProperties(workInProgress);
       return null;

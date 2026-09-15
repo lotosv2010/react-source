@@ -125,3 +125,12 @@ export declare function getRootHostContainer(): Container;
 export declare function getHostContext(): any;
 
 export declare function scheduleMicrotask(callback: () => void): void;
+
+// Suspense/Offscreen 切换隐藏/显示态时调用（Phase 9.1），纯 CSS 层面隐藏，DOM 节点仍然存在
+export declare function hideInstance(instance: Instance): void;
+export declare function unhideInstance(instance: Instance, props: Props): void;
+export declare function hideTextInstance(textInstance: TextInstance): void;
+export declare function unhideTextInstance(
+  textInstance: TextInstance,
+  text: string,
+): void;

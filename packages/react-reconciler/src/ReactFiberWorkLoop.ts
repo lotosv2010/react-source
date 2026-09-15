@@ -30,6 +30,7 @@ import {
   NoLanes,
   NoTimestamp,
   SyncLane,
+  claimNextRetryLane,
   claimNextTransitionLane,
   getHighestPriorityLane,
   getNextLanes,
@@ -37,6 +38,7 @@ import {
   includesExpiredLane,
   includesSomeLane,
   markRootFinished,
+  markRootPinged,
   markRootUpdated,
   markStarvedLanesAsExpired,
   mergeLanes,
@@ -45,7 +47,11 @@ import {
 } from "./ReactFiberLane";
 import ReactSharedInternals from "shared/ReactSharedInternals";
 import type { FiberRootNode } from "./ReactFiberRoot";
-import { finishQueueingConcurrentUpdates } from "./ReactFiberConcurrentUpdates";
+import {
+  enqueueConcurrentRenderForLane,
+  finishQueueingConcurrentUpdates,
+} from "./ReactFiberConcurrentUpdates";
+import type { Wakeable } from "shared/ReactTypes";
 import { resetContextDependencies } from "./ReactFiberNewContext";
 import {
   ContinuousEventPriority,
@@ -246,11 +252,22 @@ function completeUnitOfWork(unitOfWork: FiberNode): void {
         workInProgress = next;
         return;
       }
+
+      const siblingFiber = completedWork.sibling;
+      if (siblingFiber !== null) {
+        // 有兄弟节点，处理兄弟
+        workInProgress = siblingFiber;
+        return;
+      }
     } else {
       // 节点因抛错未完成：unwind 沿 return 链找 throwException 标记了 ShouldCapture 的
       // 边界（对照官方 unwindWork），找到就把它设为下一个 workInProgress 重新进入 beginWork
-      // 渡染 fallback，不再查兄弟节点（abort 语义，与正常 complete 分支互斥）；没找到则把
-      // Incomplete 继续向上传播，subtreeFlags/deletions 清空（半成品子树的 effect 不该生效）。
+      // 渡染 fallback；没找到则把 Incomplete 继续向上传播，subtreeFlags/deletions 清空
+      // （半成品子树的 effect 不该生效）。对照官方 unwindUnitOfWork 的 skipSiblings：
+      // 抛错节点的兄弟节点不能再继续渲染——它们大概率是同一批数据的一部分，若也 throw，
+      // 这时最近的边界已经被标记过 ShouldCapture，会找不到边界而误落进上一层兜底逻辑
+      // （比如错误地把 update 打到 HostRoot 上）。所以这里故意跳过 siblingFiber 检查，
+      // 直接向上找父节点。
       const next = unwindWork(completedWork);
 
       if (next !== null) {
@@ -266,13 +283,6 @@ function completeUnitOfWork(unitOfWork: FiberNode): void {
       }
     }
 
-    const siblingFiber = completedWork.sibling;
-    if (siblingFiber !== null) {
-      // 有兄弟节点，处理兄弟
-      workInProgress = siblingFiber;
-      return;
-    }
-    // 没有兄弟，回到父节点
     completedWork = returnFiber;
     workInProgress = completedWork;
   } while (completedWork !== null);
@@ -680,4 +690,51 @@ export function markSkippedUpdateLanes(lanes: Lanes): void {
     workInProgressRootSkippedLanes,
     lanes,
   );
+}
+
+// 对照官方 pingSuspendedRoot（简化：不做"是否要 restart from root"的启发式判断）：
+// wakeable resolve/reject 后被 attachPingListener 的 then 回调触发——markRootPinged 把
+// pingedLanes 记到 root，再 ensureRootIsScheduled 让被挂起的 lane 有机会重新参与调度。
+export function pingSuspendedRoot(
+  root: FiberRootNode,
+  wakeable: Wakeable,
+  pingedLanes: Lanes,
+): void {
+  const pingCache = root.pingCache;
+  if (pingCache !== null) {
+    pingCache.delete(wakeable);
+  }
+  markRootPinged(root, pingedLanes);
+  ensureRootIsScheduled(root, now());
+}
+
+// 对照官方 requestRetryLane（简化版 requestUpdateLane）：legacy 模式固定 SyncLane，
+// 否则从 RetryLanes 轮转分配一条，避免多个几乎同时 resolve 的 wakeable 抢同一条 lane。
+function requestRetryLane(fiber: FiberNode): Lane {
+  if ((fiber.mode & ConcurrentMode) === NoMode) {
+    return SyncLane;
+  }
+  return claimNextRetryLane();
+}
+
+// 对照官方 resolveRetryWakeable：Suspense 边界自身挂的 retry 监听（attachSuspenseRetryListeners
+// 在 commit 阶段挂上）触发后调用——从边界 fiber.stateNode 的 retry 缓存里删掉这个 wakeable，
+// 分配一条 retry lane 重新调度整棵子树重新渲染（不复用官方"若 retryLane 已存在就用它"的分支，
+// 简化为每次固定新分配一条）。
+export function resolveRetryWakeable(
+  boundaryFiber: FiberNode,
+  wakeable: Wakeable,
+): void {
+  const retryCache: Set<Wakeable> | null = boundaryFiber.stateNode;
+  if (retryCache !== null) {
+    retryCache.delete(wakeable);
+  }
+
+  const retryLane = requestRetryLane(boundaryFiber);
+  const eventTime = requestEventTime();
+  const root = enqueueConcurrentRenderForLane(boundaryFiber, retryLane);
+  if (root !== null) {
+    markRootUpdated(root, retryLane, eventTime);
+    ensureRootIsScheduled(root, eventTime);
+  }
 }

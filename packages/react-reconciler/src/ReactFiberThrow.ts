@@ -1,17 +1,19 @@
 /**
  * @file render 阶段抛错处理
  * @description 对照官方 packages/react-reconciler/src/ReactFiberThrow.js：workLoop 捕获到
- * render 阶段的 throw 后调用 throwException——给抛错的 fiber 打 Incomplete，沿 return 链向上
- * 找最近的错误边界（class 组件实现 getDerivedStateFromError/componentDidCatch），命中就打
- * ShouldCapture 并塞一条 CaptureUpdate；找不到则兜底在 HostRoot 卸载整棵树。
+ * render 阶段的 throw 后调用 throwException——给抛错的 fiber 打 Incomplete，先判断抛出的是不是
+ * Suspense 用的 thenable（Promise），是则走挂起分支；否则沿 return 链向上找最近的错误边界
+ * （class 组件实现 getDerivedStateFromError/componentDidCatch），命中就打 ShouldCapture 并塞
+ * 一条 CaptureUpdate；找不到则兜底在 HostRoot 卸载整棵树。
  *
- * 简化范围：只处理 render 阶段的错误边界（class 组件），不含 Suspense 的 Promise 分支
- * （Wakeable/thenable 判断留到 Phase 9.1 落地时补），也不追踪 componentStack。
+ * 简化范围：不追踪 componentStack；找不到 Suspense 边界时不做官方"是否同步渲染"的区分，
+ * 直接落进下面统一的错误处理循环（把 Promise 本身当错误处理，命中最近 class 错误边界或
+ * 兜底卸载 HostRoot）——对应 Phase 9.1 计划里"找不到边界则维持现有错误路径"的取舍。
  */
 
 import type { FiberNode } from "./ReactFiber";
 import type { FiberRootNode } from "./ReactFiberRoot";
-import { ClassComponent, HostRoot } from "./ReactWorkTags";
+import { ClassComponent, HostRoot, SuspenseComponent } from "./ReactWorkTags";
 import { ShouldCapture, Incomplete } from "./ReactFiberFlags";
 import { getHighestPriorityLane, type Lanes } from "./ReactFiberLane";
 import {
@@ -20,6 +22,8 @@ import {
   enqueueCapturedUpdate,
   type Update,
 } from "./ReactFiberClassUpdateQueue";
+import type { Wakeable } from "shared/ReactTypes";
+import { pingSuspendedRoot } from "./ReactFiberWorkLoop";
 
 // 对照官方 createClassErrorUpdate：payload/callback 复用现有消费链路——payload 走
 // processUpdateQueue 的浅合并语义（getDerivedStateFromError 返回值即 partial state），
@@ -60,14 +64,114 @@ function createRootErrorUpdate(error: any, lane: any): Update<any> {
   return update;
 }
 
-export function throwException(
+// 对照官方 isThenable判断：Suspense 只关心"是不是一个带 then 方法的对象"，不关心它到底是
+// 原生 Promise 还是 Promise-like（用户自造的 thenable），二者都能被 wakeable.then(ping, ping) 监听。
+function isThenable(value: any): value is Wakeable {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    typeof value.then === "function"
+  );
+}
+
+// 对照官方 getNearestSuspenseBoundaryToCapture：沿 return 链向上找最近的 SuspenseComponent，
+// 且它自身还没有被标记 ShouldCapture（嵌套 Suspense 场景下，内层已经在处理就交给外层）。
+function getNearestSuspenseBoundaryToCapture(
+  returnFiber: FiberNode | null,
+): FiberNode | null {
+  let node: FiberNode | null = returnFiber;
+  while (node !== null) {
+    if (node.tag === SuspenseComponent && (node.flags & ShouldCapture) === 0) {
+      return node;
+    }
+    node = node.return;
+  }
+  return null;
+}
+
+// 对照官方 attachPingListener：用 root.pingCache 给同一个 wakeable 记录已经监听过的 lanes 集合，
+// 避免重复挂 then 监听；resolve/reject 时都调用 pingSuspendedRoot，让 root 重新调度这些 lanes。
+function attachPingListener(
+  root: FiberRootNode,
+  wakeable: Wakeable,
+  lanes: Lanes,
+): void {
+  let pingCache = root.pingCache;
+  let threadIDs: Set<Lanes> | undefined;
+  if (pingCache === null) {
+    pingCache = root.pingCache = new WeakMap();
+    threadIDs = new Set();
+    pingCache.set(wakeable, threadIDs);
+  } else {
+    threadIDs = pingCache.get(wakeable);
+    if (threadIDs === undefined) {
+      threadIDs = new Set();
+      pingCache.set(wakeable, threadIDs);
+    }
+  }
+  if (!threadIDs.has(lanes)) {
+    threadIDs.add(lanes);
+    const ping = () => pingSuspendedRoot(root, wakeable, lanes);
+    wakeable.then(ping, ping);
+  }
+}
+
+// 对照官方 SuspenseState（简化：去掉 dehydrated/treeContext，本项目不做 SSR 水合）。
+// retryLane 目前只是占位字段，不参与调度决策——Suspense fiber.memoizedState 是否为 null
+// 才是真正判断"当前展示 fallback 还是 primary"的依据（对照官方注释：用 state 对象是否
+// 存在表示是否挂起）。
+export interface SuspenseState {
+  retryLane: Lanes;
+}
+
+// 对照官方 attachRetryListener：把 wakeable 记到 Suspense 边界自身的 updateQueue（一个
+// Set<Wakeable>），commit 阶段的 attachSuspenseRetryListeners 会消费这个 Set 挂上真正的
+// resolveRetryWakeable 监听。这里只负责记录，不重复挂监听（同一个 wakeable 可能被 Set 去重）。
+function attachRetryListener(
+  suspenseBoundary: FiberNode,
   _root: FiberRootNode,
+  wakeable: Wakeable,
+  _lanes: Lanes,
+): void {
+  let retryQueue: Set<Wakeable> | null = suspenseBoundary.updateQueue;
+  if (retryQueue === null) {
+    retryQueue = new Set();
+    suspenseBoundary.updateQueue = retryQueue;
+  }
+  retryQueue.add(wakeable);
+}
+
+// 对照官方 markSuspenseBoundaryShouldCapture：不走 CaptureUpdate（不需要 payload/callback），
+// 直接打 ShouldCapture，重新进入 beginWork 走 unwindWork -> updateSuspenseComponent 渲染 fallback。
+function markSuspenseBoundaryShouldCapture(
+  suspenseBoundary: FiberNode,
+  renderLanes: Lanes,
+): void {
+  suspenseBoundary.flags |= ShouldCapture;
+  suspenseBoundary.lanes = renderLanes;
+}
+
+export function throwException(
+  root: FiberRootNode,
   returnFiber: FiberNode | null,
   sourceFiber: FiberNode,
   value: any,
   renderLanes: Lanes,
 ): void {
   sourceFiber.flags |= Incomplete;
+
+  if (isThenable(value)) {
+    const wakeable: Wakeable = value;
+    const suspenseBoundary = getNearestSuspenseBoundaryToCapture(returnFiber);
+    if (suspenseBoundary !== null) {
+      markSuspenseBoundaryShouldCapture(suspenseBoundary, renderLanes);
+      attachPingListener(root, wakeable, renderLanes);
+      attachRetryListener(suspenseBoundary, root, wakeable, renderLanes);
+      return;
+    }
+    // 找不到 Suspense 边界：不做官方"同步渲染时抛新错误"的区分，直接把 Promise 当错误值，
+    // 落进下面的错误边界查找循环（命中最近 class 错误边界，或兜底卸载 HostRoot）。
+  }
 
   const lane = getHighestPriorityLane(renderLanes);
 

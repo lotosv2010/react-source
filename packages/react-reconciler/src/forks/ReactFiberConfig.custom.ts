@@ -56,3 +56,7 @@ export const shouldSetTextContent = $$$config.shouldSetTextContent;
 export const getRootHostContainer = $$$config.getRootHostContainer;
 export const getHostContext = $$$config.getHostContext;
 export const scheduleMicrotask = $$$config.scheduleMicrotask;
+export const hideInstance = $$$config.hideInstance;
+export const unhideInstance = $$$config.unhideInstance;
+export const hideTextInstance = $$$config.hideTextInstance;
+export const unhideTextInstance = $$$config.unhideTextInstance;

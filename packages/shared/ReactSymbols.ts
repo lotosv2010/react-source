@@ -58,6 +58,12 @@ export const REACT_SUSPENSE_TYPE = Symbol.for("react.suspense");
 export const REACT_MEMO_TYPE = Symbol.for("react.memo");
 
 /**
+ * Offscreen 的类型标识符
+ * Suspense 内部用它包裹 primary/fallback 子树，控制隐藏/显示（Phase 9.1）
+ */
+export const REACT_OFFSCREEN_TYPE = Symbol.for("react.offscreen");
+
+/**
  * lazy 的类型标识符
  * 用于识别 lazy() 懒加载组件（Phase 9）
  */

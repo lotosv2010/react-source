@@ -65,6 +65,9 @@ export const NoTimestamp = -1;
 // 轮转分配 TransitionLane 的游标（claimNextTransitionLane 每次右移一位）
 let nextTransitionLane: Lane = TransitionLane1;
 
+// 轮转分配 RetryLane 的游标（claimNextRetryLane 每次左移一位，对照 claimNextTransitionLane）
+let nextRetryLane: Lane = RetryLane1;
+
 /**
  * 求两条 lane 的并集
  * @param a - lane/lanes
@@ -435,4 +438,24 @@ export function includesOnlyTransitions(lanes: Lanes): boolean {
 
 export function isTransitionLane(lane: Lane): boolean {
   return (lane & TransitionLanes) !== NoLanes;
+}
+
+export function includesOnlyRetries(lanes: Lanes): boolean {
+  return (lanes & RetryLanes) === lanes;
+}
+
+// 从 RetryLane1 开始轮转分配 RetryLane（Suspense resolveRetryWakeable 用，Phase 9.1 消费）
+export function claimNextRetryLane(): Lane {
+  const lane = nextRetryLane;
+  nextRetryLane <<= 1;
+  if ((nextRetryLane & RetryLanes) === NoLanes) {
+    nextRetryLane = RetryLane1;
+  }
+  return lane;
+}
+
+// 对照官方 markRootPinged：把 wakeable resolve 时传入的 pingedLanes 与 root 当前挂起的
+// suspendedLanes 取交集标记到 root.pingedLanes——只有本来就被挂起的 lane 才需要被 ping 唤醒。
+export function markRootPinged(root: FiberRootNode, pingedLanes: Lanes): void {
+  root.pingedLanes |= root.suspendedLanes & pingedLanes;
 }

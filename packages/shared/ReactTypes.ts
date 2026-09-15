@@ -61,3 +61,12 @@ export interface ReactProviderType<T> {
   _context: ReactContext<T>;
   (props: { value: T; children?: any }): any;
 }
+
+/**
+ * Suspense 捕获的 thenable（Promise 或 Promise-like 对象）
+ * 对照官方 ReactTypes.js 的 Wakeable：只要求有 then 方法，不关心 resolve 的值，
+ * Suspense 只需要知道"它 settle 了"这一件事就够了
+ */
+export interface Wakeable {
+  then(onFulfill: () => any, onReject: () => any): void | Wakeable;
+}

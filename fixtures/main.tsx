@@ -4,12 +4,13 @@ import App from "./jsx/index";
 import DomComp from "./dom/index";
 // import runReconcilerDemo from "./reconciler/index";
 // import runSchedulerDemo from "./scheduler/index";
-import runHooksDemo from "./hooks/index";
-import runEventsDemo from "./events/index";
-import runContextDemo from "./context/index";
-import runClassDemo from "./class/index";
-import runForwardRefMemoDemo from "./forwardref-memo/index";
-import runErrorBoundaryDemo from "./error-boundary/index";
+// import runHooksDemo from "./hooks/index";
+// import runEventsDemo from "./events/index";
+// import runContextDemo from "./context/index";
+// import runClassDemo from "./class/index";
+// import runForwardRefMemoDemo from "./forwardref-memo/index";
+// import runErrorBoundaryDemo from "./error-boundary/index";
+// import runSuspenseDemo from "./suspense/index";
 
 // react-dom 简版（createRoot）已落地，HostConfig 由构建时 fork 注入，
 // 这里先只验证 createElement/jsx 能不能正常产出 element 对象。
@@ -23,23 +24,27 @@ console.log("App", App());
 // runSchedulerDemo();
 
 // hooks 验证：useState/useEffect/useLayoutEffect/useMemo/useCallback/useReducer/useContext/useRef/useImperativeHandle/useDebugValue
-runHooksDemo();
+// runHooksDemo();
 
 // 事件系统验证：合成事件 + 事件委托 + 批量更新（Phase 6）
-runEventsDemo();
+// runEventsDemo();
 
 // Context API 验证：createContext/Provider/Consumer/useContext + 消费传播（Phase 7）
-runContextDemo();
+// runContextDemo();
 
 // Class 组件验证：生命周期（挂载/更新/卸载）+ setState/forceUpdate + PureComponent（Phase 8）
-runClassDemo();
+// runClassDemo();
 
 // forwardRef/memo 验证：ref 转发到内部 DOM 节点 + 浅比较跳过重渲染（Phase 9.2）
-runForwardRefMemoDemo();
+// runForwardRefMemoDemo();
 
 // 错误边界验证：render 阶段抛错的 unwind 地基 + getDerivedStateFromError/componentDidCatch
 // + 无边界兜底卸载整棵树（Phase 9.0/9.3）
-runErrorBoundaryDemo();
+// runErrorBoundaryDemo();
+
+// Suspense 验证：render 阶段 throw Promise 展示 fallback，Promise resolve 后自动重渲染
+// 出真实内容（Phase 9.1）
+// runSuspenseDemo();
 
 const root = createRoot(document.getElementById("root")!);
 root.render(

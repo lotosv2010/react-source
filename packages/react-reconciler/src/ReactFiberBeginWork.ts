@@ -23,12 +23,25 @@ import {
   updateClassInstance,
 } from "./ReactFiberClassComponent";
 import {
+  createFiberFromFragment,
+  createFiberFromOffscreen,
   createFiberFromTypeAndProps,
   createWorkInProgress,
   type FiberNode,
 } from "./ReactFiber";
-import { DidCapture, NoFlags, PerformedWork, Ref } from "./ReactFiberFlags";
-import { NoLanes, includesSomeLane, type Lanes } from "./ReactFiberLane";
+import {
+  ChildDeletion,
+  DidCapture,
+  NoFlags,
+  PerformedWork,
+  Ref,
+} from "./ReactFiberFlags";
+import {
+  NoLanes,
+  includesSomeLane,
+  mergeLanes,
+  type Lanes,
+} from "./ReactFiberLane";
 import { renderWithHooks } from "./ReactFiberHooks";
 import {
   prepareToReadContext,
@@ -49,7 +62,14 @@ import {
   IndeterminateComponent,
   MemoComponent,
   Mode,
+  OffscreenComponent,
+  SuspenseComponent,
 } from "./ReactWorkTags";
+import type {
+  OffscreenProps,
+  OffscreenState,
+} from "./ReactFiberOffscreenComponent";
+import type { SuspenseState } from "./ReactFiberThrow";
 
 // 模块级状态：本次 beginWork 是否接收到了新的 props/state/context。
 // 官方用 didReceiveUpdate 在 dispatch 顶层与各 update* 分支之间传递"是否要重渲染"的信号，
@@ -432,6 +452,266 @@ function updateContextProvider(
 // 对照官方 updateContextConsumer：<Context.Consumer> 的 children 是一个接收 context 当前值
 // 的函数（render prop 模式），本项目暂不实现 class 组件 contextType，useContext 走
 // ReactFiberHooks 的 dispatcher，不经过这里。
+// 对照官方 mountSuspenseOffscreenState（简化：去掉 cachePool/transitions）
+function mountSuspenseOffscreenState(renderLanes: Lanes): OffscreenState {
+  return { baseLanes: renderLanes };
+}
+
+// 对照官方 updateSuspenseOffscreenState
+function updateSuspenseOffscreenState(
+  prevOffscreenState: OffscreenState,
+  renderLanes: Lanes,
+): OffscreenState {
+  return { baseLanes: mergeLanes(prevOffscreenState.baseLanes, renderLanes) };
+}
+
+// 对照官方 mountSuspenseFallbackChildren：showFallback 分支的挂载——primary 内容包一层
+// hidden 态 Offscreen（保留其渲染结果，只是隐藏），fallback 内容作为它的兄弟 Fragment 直接挂载。
+function mountSuspenseFallbackChildren(
+  workInProgress: FiberNode,
+  primaryChildren: any,
+  fallbackChildren: any,
+  renderLanes: Lanes,
+): FiberNode {
+  const mode = workInProgress.mode;
+
+  const primaryChildProps: OffscreenProps = {
+    mode: "hidden",
+    children: primaryChildren,
+  };
+  const primaryChildFragment = createFiberFromOffscreen(
+    primaryChildProps,
+    mode,
+    NoLanes,
+    null,
+  );
+  const fallbackChildFragment = createFiberFromFragment(
+    fallbackChildren,
+    mode,
+    renderLanes,
+    null,
+  );
+
+  primaryChildFragment.return = workInProgress;
+  fallbackChildFragment.return = workInProgress;
+  primaryChildFragment.sibling = fallbackChildFragment;
+  workInProgress.child = primaryChildFragment;
+  return fallbackChildFragment;
+}
+
+// 对照官方 mountSuspensePrimaryChildren：不挂起时只挂一个可见态的 Offscreen 包 primary 内容，
+// 没有 fallback 兄弟节点。
+function mountSuspensePrimaryChildren(
+  workInProgress: FiberNode,
+  primaryChildren: any,
+): FiberNode {
+  const mode = workInProgress.mode;
+  const primaryChildProps: OffscreenProps = {
+    mode: "visible",
+    children: primaryChildren,
+  };
+  const primaryChildFragment = createFiberFromOffscreen(
+    primaryChildProps,
+    mode,
+    NoLanes,
+    null,
+  );
+  primaryChildFragment.return = workInProgress;
+  workInProgress.child = primaryChildFragment;
+  return primaryChildFragment;
+}
+
+// 对照官方 updateWorkInProgressOffscreenFiber：复用/克隆 current 的 Offscreen fiber，
+// 只换 pendingProps（mode/children）。
+function updateWorkInProgressOffscreenFiber(
+  current: FiberNode,
+  offscreenProps: OffscreenProps,
+): FiberNode {
+  return createWorkInProgress(current, offscreenProps);
+}
+
+// 对照官方 updateSuspenseFallbackChildren：update 时切到展示 fallback——复用 current 的
+// primary Offscreen fiber（切成 hidden 态），fallback 一侧若 current 已有旧 fallback 就
+// 复用 clone，否则新建。
+function updateSuspenseFallbackChildren(
+  current: FiberNode,
+  workInProgress: FiberNode,
+  primaryChildren: any,
+  fallbackChildren: any,
+  renderLanes: Lanes,
+): FiberNode {
+  const currentPrimaryChildFragment = current.child as FiberNode;
+  const currentFallbackChildFragment: FiberNode | null =
+    currentPrimaryChildFragment.sibling;
+
+  const primaryChildProps: OffscreenProps = {
+    mode: "hidden",
+    children: primaryChildren,
+  };
+  const primaryChildFragment = updateWorkInProgressOffscreenFiber(
+    currentPrimaryChildFragment,
+    primaryChildProps,
+  );
+  primaryChildFragment.return = workInProgress;
+
+  let fallbackChildFragment: FiberNode;
+  if (currentFallbackChildFragment !== null) {
+    fallbackChildFragment = createWorkInProgress(
+      currentFallbackChildFragment,
+      fallbackChildren,
+    );
+  } else {
+    fallbackChildFragment = createFiberFromFragment(
+      fallbackChildren,
+      workInProgress.mode,
+      renderLanes,
+      null,
+    );
+    // 从 primary 切到 fallback：Placement 由父级 completeWork 阶段的 bubbleProperties
+    // 冒泡出去，这里不需要单独打标记（Fragment 本身没有 DOM，靠子树里的 host 节点插入）
+  }
+  fallbackChildFragment.return = workInProgress;
+
+  primaryChildFragment.sibling = fallbackChildFragment;
+  workInProgress.child = primaryChildFragment;
+  return fallbackChildFragment;
+}
+
+// 对照官方 updateSuspensePrimaryChildren：update 时切回/维持展示 primary——复用 current 的
+// primary Offscreen fiber（切成 visible 态），若 current 还带着旧 fallback 则打 ChildDeletion。
+function updateSuspensePrimaryChildren(
+  current: FiberNode,
+  workInProgress: FiberNode,
+  primaryChildren: any,
+): FiberNode {
+  const currentPrimaryChildFragment = current.child as FiberNode;
+  const currentFallbackChildFragment: FiberNode | null =
+    currentPrimaryChildFragment.sibling;
+
+  const primaryChildProps: OffscreenProps = {
+    mode: "visible",
+    children: primaryChildren,
+  };
+  const primaryChildFragment = updateWorkInProgressOffscreenFiber(
+    currentPrimaryChildFragment,
+    primaryChildProps,
+  );
+  primaryChildFragment.return = workInProgress;
+  primaryChildFragment.sibling = null;
+
+  if (currentFallbackChildFragment !== null) {
+    const deletions = workInProgress.deletions;
+    if (deletions === null) {
+      workInProgress.deletions = [currentFallbackChildFragment];
+      workInProgress.flags |= ChildDeletion;
+    } else {
+      deletions.push(currentFallbackChildFragment);
+    }
+  }
+
+  workInProgress.child = primaryChildFragment;
+  return primaryChildFragment;
+}
+
+// 对照官方 updateSuspenseComponent（简化：不含 SuspenseContext 栈/dehydration/SuspenseList）：
+// showFallback 由 DidCapture 决定——unwindWork 在 throwException 命中这个边界后翻转了这个
+// flag，重新进入 beginWork 时据此判断本次要渡染 fallback 还是 primary。
+function updateSuspenseComponent(
+  current: FiberNode | null,
+  workInProgress: FiberNode,
+  renderLanes: Lanes,
+): FiberNode | null {
+  const nextProps = workInProgress.pendingProps;
+  let showFallback = false;
+  const didSuspend = (workInProgress.flags & DidCapture) !== NoFlags;
+  if (didSuspend) {
+    showFallback = true;
+    workInProgress.flags &= ~DidCapture;
+  }
+
+  if (current === null) {
+    if (showFallback) {
+      const fallbackFragment = mountSuspenseFallbackChildren(
+        workInProgress,
+        nextProps.children,
+        nextProps.fallback,
+        renderLanes,
+      );
+      const primaryChildFragment = workInProgress.child as FiberNode;
+      primaryChildFragment.memoizedState =
+        mountSuspenseOffscreenState(renderLanes);
+      workInProgress.memoizedState = { retryLane: renderLanes };
+      return fallbackFragment;
+    }
+    const primaryChildFragment = mountSuspensePrimaryChildren(
+      workInProgress,
+      nextProps.children,
+    );
+    workInProgress.memoizedState = null;
+    return primaryChildFragment;
+  }
+
+  // update：current.memoizedState 非 null 说明上一次渲染就是展示 fallback
+  const prevState: SuspenseState | null = current.memoizedState;
+  if (showFallback) {
+    const fallbackFragment = updateSuspenseFallbackChildren(
+      current,
+      workInProgress,
+      nextProps.children,
+      nextProps.fallback,
+      renderLanes,
+    );
+    const primaryChildFragment = workInProgress.child as FiberNode;
+    const prevOffscreenState: OffscreenState | null = (
+      current.child as FiberNode
+    ).memoizedState;
+    primaryChildFragment.memoizedState =
+      prevOffscreenState === null
+        ? mountSuspenseOffscreenState(renderLanes)
+        : updateSuspenseOffscreenState(prevOffscreenState, renderLanes);
+    workInProgress.memoizedState = { retryLane: renderLanes };
+    return fallbackFragment;
+  }
+
+  const primaryChildFragment = updateSuspensePrimaryChildren(
+    current,
+    workInProgress,
+    nextProps.children,
+  );
+  workInProgress.memoizedState = null;
+  void prevState;
+  return primaryChildFragment;
+}
+
+// 对照官方 updateOffscreenComponent（简化：不做 hidden 时 bail-out-and-defer 到 OffscreenLane
+// 的机制，始终正常 reconcile children——隐藏效果完全交给 commit 阶段的 Visibility flag +
+// hideInstance/unhideInstance 处理，对应 Phase 9.1 计划的简化点 2）。memoizedState 是否为
+// null 由 nextProps.mode 决定（"hidden" 才有 state），completeWork 据此对比新旧状态打
+// Visibility flag。
+function updateOffscreenComponent(
+  current: FiberNode | null,
+  workInProgress: FiberNode,
+  renderLanes: Lanes,
+): FiberNode | null {
+  const nextProps: OffscreenProps = workInProgress.pendingProps;
+  const nextChildren = nextProps.children;
+  const nextIsHidden = nextProps.mode === "hidden";
+
+  if (!nextIsHidden) {
+    workInProgress.memoizedState = null;
+  } else {
+    const prevState: OffscreenState | null =
+      current !== null ? current.memoizedState : null;
+    workInProgress.memoizedState =
+      prevState !== null
+        ? updateSuspenseOffscreenState(prevState, renderLanes)
+        : mountSuspenseOffscreenState(renderLanes);
+  }
+
+  reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+  return workInProgress.child;
+}
+
 function updateContextConsumer(
   current: FiberNode | null,
   workInProgress: FiberNode,
@@ -604,6 +884,10 @@ function beginWork(
       return updateContextProvider(current, workInProgress, renderLanes);
     case ContextConsumer:
       return updateContextConsumer(current, workInProgress, renderLanes);
+    case SuspenseComponent:
+      return updateSuspenseComponent(current, workInProgress, renderLanes);
+    case OffscreenComponent:
+      return updateOffscreenComponent(current, workInProgress, renderLanes);
   }
 
   throw new Error(

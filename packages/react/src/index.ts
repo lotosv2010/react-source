@@ -7,7 +7,16 @@ import { createElement, isValidElement } from "./ReactElement";
 import { createContext } from "./ReactContext";
 import { forwardRef } from "./ReactForwardRef";
 import { memo } from "./ReactMemo";
+import { REACT_SUSPENSE_TYPE } from "shared/ReactSymbols";
 import { Component, PureComponent } from "./ReactBaseClasses";
+
+// Suspense 运行时就是 REACT_SUSPENSE_TYPE 这个 symbol（beginWork 靠 === 比较分发），
+// 这里的调用签名只为满足 TS 的 JSX 元素类型检查（同 ReactContext.ts 的 ReactProviderType
+// 处理方式），不代表真的可以把 Suspense 当函数调用。
+interface SuspenseType {
+  (props: { children?: any; fallback?: any }): any;
+}
+const Suspense = REACT_SUSPENSE_TYPE as unknown as SuspenseType;
 import {
   useCallback,
   useContext,
@@ -27,9 +36,12 @@ import ReactSharedInternals from "./ReactSharedInternals";
 // 经典入口只暴露 createElement/isValidElement，jsx/jsxDEV 已经拆到
 // jsx-runtime.ts / jsx-dev-runtime.ts 两个独立入口（对应 react/jsx-runtime、
 // react/jsx-dev-runtime），不再从这里导出。
+// Suspense 和 Fragment 一样只是一个 Symbol（不是像 forwardRef/memo 那样的工厂函数），
+// 对照官方直接把 REACT_SUSPENSE_TYPE 重命名导出为 Suspense。
 export {
   Component,
   PureComponent,
+  Suspense,
   createContext,
   createElement,
   forwardRef,
@@ -58,6 +70,7 @@ export default {
   version: "1.0.0",
   Component,
   PureComponent,
+  Suspense,
   createContext,
   createElement,
   forwardRef,

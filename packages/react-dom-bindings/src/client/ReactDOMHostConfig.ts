@@ -250,6 +250,34 @@ export function getHostContext(): object {
   return {};
 }
 
+// 对照官方 hideInstance/unhideInstance：纯 CSS 层面隐藏，DOM 节点仍然存在（不走
+// removeChild），Suspense 展示 fallback / Offscreen 切到 hidden 态时调用。
+export function hideInstance(instance: Element): void {
+  (instance as HTMLElement).style.display = "none";
+}
+
+export function unhideInstance(
+  instance: Element,
+  props: Record<string, any>,
+): void {
+  const styleProp = props.style;
+  const display =
+    styleProp != null &&
+    Object.prototype.hasOwnProperty.call(styleProp, "display")
+      ? styleProp.display
+      : null;
+  (instance as HTMLElement).style.display = display == null ? "" : display;
+}
+
+// 对照官方 hideTextInstance/unhideTextInstance：文本节点没有 style，只能清空/还原内容
+export function hideTextInstance(textInstance: Text): void {
+  textInstance.nodeValue = "";
+}
+
+export function unhideTextInstance(textInstance: Text, text: string): void {
+  textInstance.nodeValue = text;
+}
+
 // 对照官方 scheduleMicrotask：SyncLane 的同步任务由微任务统一 flush。queueMicrotask 在
 // ES2019 lib 里未声明，用 globalThis 兜底；老环境退回 Promise.resolve().then。
 export function scheduleMicrotask(callback: () => void): void {

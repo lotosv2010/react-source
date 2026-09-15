@@ -7,7 +7,12 @@
  */
 
 import type { FiberNode } from "./ReactFiber";
-import { ClassComponent, ContextProvider, HostRoot } from "./ReactWorkTags";
+import {
+  ClassComponent,
+  ContextProvider,
+  HostRoot,
+  SuspenseComponent,
+} from "./ReactWorkTags";
 import { DidCapture, NoFlags, ShouldCapture } from "./ReactFiberFlags";
 import { popProvider } from "./ReactFiberNewContext";
 import type { ReactContext } from "shared/ReactTypes";
@@ -16,6 +21,17 @@ export function unwindWork(workInProgress: FiberNode): FiberNode | null {
   switch (workInProgress.tag) {
     case ClassComponent:
     case HostRoot: {
+      const flags = workInProgress.flags;
+      if ((flags & ShouldCapture) !== NoFlags) {
+        workInProgress.flags = (flags & ~ShouldCapture) | DidCapture;
+        return workInProgress;
+      }
+      return null;
+    }
+    // 对照官方：Suspense 边界与 ClassComponent/HostRoot 走同一套 ShouldCapture -> DidCapture
+    // 翻转，唯一区别是不带 update（不复用 CaptureUpdate 那条路径）——重新进入 beginWork 时，
+    // updateSuspenseComponent 直接读 DidCapture 决定渲染 fallback，不需要经过 updateQueue。
+    case SuspenseComponent: {
       const flags = workInProgress.flags;
       if ((flags & ShouldCapture) !== NoFlags) {
         workInProgress.flags = (flags & ~ShouldCapture) | DidCapture;
